@@ -46,6 +46,7 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Library/LaunchAgents"
 cp "$bin_dir/InstantTab" "$app/Contents/MacOS/InstantTab"
 cp Resources/Info.plist "$app/Contents/Info.plist"
+cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 # Start at login: a launch agent that relaunches InstantTab after a crash, registered from the menu.
 cp Resources/com.infeace.InstantTab.agent.plist "$app/Contents/Library/LaunchAgents/"
 build_number="$(git rev-list --count HEAD 2>/dev/null || echo 0)"
