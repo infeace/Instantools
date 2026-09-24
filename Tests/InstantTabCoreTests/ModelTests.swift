@@ -109,8 +109,28 @@ struct SessionKeyTests {
         #expect(!SessionKey.app("f").repeats)
     }
 
+    @Test func upAndDownExpose() {
+        #expect(SessionKey(keycode: 125, characters: "\u{f701}") == .expose)
+        #expect(SessionKey(keycode: 126, characters: "\u{f700}") == .expose)
+        #expect(!SessionKey.expose.repeats)
+    }
+
     @Test func onlyMovesRepeat() {
         #expect(SessionKey.next.repeats && SessionKey.previous.repeats)
         #expect(!SessionKey.quit.repeats && !SessionKey.hide.repeats)
+    }
+}
+
+struct EntryStateTests {
+    @Test func stateDescribesWhatASwitchFinds() {
+        #expect(SwitcherEntry(pid: 1, name: "A", windowId: 10).state == nil)
+        #expect(SwitcherEntry(pid: 1, name: "A", windowId: nil).state == "No visible window")
+        #expect(SwitcherEntry(pid: 1, name: "A", windowId: nil, isHidden: true).state == "Hidden")
+    }
+
+    @Test func filterCarriesHiddenState() {
+        let snapshot = Snapshot(apps: [RunningApp(pid: 1, bundleId: "com.a", name: "A", isHidden: true), RunningApp(pid: 2, bundleId: "com.b", name: "B")])
+        let entries = SwitcherFilter.entries(for: snapshot, config: Config(), exclusions: ExclusionMatcher([]), displays: [], targets: nil)
+        #expect(entries.map(\.isHidden) == [true, false])
     }
 }

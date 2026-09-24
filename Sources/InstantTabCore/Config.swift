@@ -60,32 +60,64 @@ public struct Config: Sendable, Equatable {
     public var exclude: [Exclusion] = []
     public var displayGroups: [DisplayGroup] = []
     public var appKeys: [AppKey] = []
+    /// Apps that get Cmd+Tab themselves while they are in front, such as virtual machines. Bundle id
+    /// patterns like `exclude`.
+    public var passThrough: [String] = []
 
     public init() {}
 
     public func excludes(_ bundleId: String) -> Bool {
         exclude.contains { $0.bundleId.caseInsensitiveCompare(bundleId) == .orderedSame }
     }
+
+    public func passesThrough(_ bundleId: String) -> Bool {
+        passThrough.contains { $0.caseInsensitiveCompare(bundleId) == .orderedSame }
+    }
 }
 
-/// Built once per config, so a key press only compares lowercased strings. Bundle ids are
-/// case-insensitive on macOS.
+/// An exact bundle id, or a prefix when it ends with `*`. Bundle ids are case-insensitive on macOS.
+public struct BundleIdPattern: Sendable {
+    private let text: String
+    private let isPrefix: Bool
+
+    public init(_ pattern: String) {
+        let lowercased = pattern.lowercased()
+        isPrefix = lowercased.hasSuffix("*")
+        text = isPrefix ? String(lowercased.dropLast()) : lowercased
+    }
+
+    /// Takes the id already lowercased, so matching one app against many patterns lowercases it once.
+    func matches(lowercased id: String) -> Bool {
+        isPrefix ? id.hasPrefix(text) : id == text
+    }
+}
+
+/// Built once per config, so a key press only compares lowercased strings.
 public struct ExclusionMatcher: Sendable {
-    private let rules: [(pattern: String, isPrefix: Bool, when: Config.Exclusion.When)]
+    private let rules: [(pattern: BundleIdPattern, when: Config.Exclusion.When)]
 
     public init(_ exclusions: [Config.Exclusion]) {
-        rules = exclusions.map { rule in
-            let pattern = rule.bundleId.lowercased()
-            return pattern.hasSuffix("*") ? (String(pattern.dropLast()), true, rule.when) : (pattern, false, rule.when)
-        }
+        rules = exclusions.map { (BundleIdPattern($0.bundleId), $0.when) }
     }
 
     public func isExcluded(bundleId: String?, hasWindows: Bool) -> Bool {
         guard let bundleId, !rules.isEmpty else { return false }
         let id = bundleId.lowercased()
-        return rules.contains { rule in
-            (rule.isPrefix ? id.hasPrefix(rule.pattern) : id == rule.pattern) && (rule.when == .always || !hasWindows)
-        }
+        return rules.contains { $0.pattern.matches(lowercased: id) && ($0.when == .always || !hasWindows) }
+    }
+}
+
+public struct BundleIdMatcher: Sendable {
+    private let patterns: [BundleIdPattern]
+
+    public init(_ patterns: [String]) {
+        self.patterns = patterns.map(BundleIdPattern.init)
+    }
+
+    public func matches(_ bundleId: String?) -> Bool {
+        guard let bundleId, !patterns.isEmpty else { return false }
+        let id = bundleId.lowercased()
+        return patterns.contains { $0.matches(lowercased: id) }
     }
 }
 
@@ -107,7 +139,7 @@ extension Config {
         public var warnings: [String]
     }
 
-    private static let knownKeys: Set = ["showDelayMs", "scope", "windowlessApps", "iconSize", "exclude", "displayGroups", "appKeys"]
+    private static let knownKeys: Set = ["showDelayMs", "scope", "windowlessApps", "iconSize", "exclude", "displayGroups", "appKeys", "passThrough"]
     private static let knownExclusionKeys: Set = ["bundleId", "when"]
     private static let knownGroupKeys: Set = ["name", "match"]
 
@@ -188,6 +220,21 @@ extension Config {
                 }
             }
             config.appKeys.sort { $0.key < $1.key }
+        }
+        if let value = root["passThrough"] {
+            guard let apps = value as? [Any] else { throw .invalid("passThrough must be a list of bundle ids") }
+            for (index, app) in apps.enumerated() {
+                guard let bundleId = app as? String, !bundleId.isEmpty else {
+                    throw .invalid("passThrough[\(index)] must be a bundle id")
+                }
+                if bundleId == "*" {
+                    warnings.append("passThrough '*' would give Cmd+Tab to every app, so it is ignored")
+                } else if config.passesThrough(bundleId) {
+                    warnings.append("passThrough lists '\(bundleId)' twice, the first is used")
+                } else {
+                    config.passThrough.append(bundleId)
+                }
+            }
         }
         if case .group(let name) = config.scope, !config.displayGroups.contains(where: { $0.name == name }) {
             warnings.append("scope uses group '\(name)', which does not exist, so all monitors are shown")
@@ -290,6 +337,8 @@ extension Config {
             "    // f: \"com.apple.finder\",",
             "    // \"1\": \"com.apple.Safari\",",
         ]
+        let passLines = passThrough.map { "    \(Self.quoted($0))," }
+        let passExamples = ["    // \"com.parallels.desktop.console\","]
         let groupExamples = [
             "    // { name: \"Laptop\", match: [\"builtIn\"] },",
             "    // { name: \"Desk\", match: [\"external\"] },",
@@ -336,6 +385,12 @@ extension Config {
           appKeys: {
         \((keyLines.isEmpty ? keyExamples : keyLines).joined(separator: "\n"))
           },
+
+          // Apps that get Cmd+Tab themselves while they are in front, such as virtual machines, remote
+          // desktops and games. By bundle id; a trailing * matches a prefix.
+          passThrough: [
+        \((passLines.isEmpty ? passExamples : passLines).joined(separator: "\n"))
+          ],
         }
 
         """

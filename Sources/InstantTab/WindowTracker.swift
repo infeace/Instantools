@@ -102,7 +102,8 @@ final class WindowTracker {
             let pid = app.processIdentifier
             apps[pid] = RunningApp(
                 pid: pid, bundleId: app.bundleIdentifier,
-                name: app.localizedName ?? app.bundleURL?.deletingPathExtension().lastPathComponent ?? "App"
+                name: app.localizedName ?? app.bundleURL?.deletingPathExtension().lastPathComponent ?? "App",
+                isHidden: app.isHidden
             )
             live.append(pid)
         }

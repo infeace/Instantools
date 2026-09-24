@@ -42,6 +42,7 @@ enum SettingsSnapshot {
                 $0.bindAppKey("f", to: "com.apple.finder")
                 $0.bindAppKey("s", to: "com.apple.Safari")
                 $0.bindAppKey("1", to: "com.example.Missing")
+                $0.passThrough = ["com.parallels.desktop.console", "com.apple.ScreenSharing"]
             }
         }
         let model = SettingsModel(configStore: store, actions: .init(
@@ -57,9 +58,16 @@ enum SettingsSnapshot {
             focusedDisplay: { displays.mouseDisplayId() },
             accessibilityGranted: { !arguments.contains("--no-access") },
             recentApps: {
+                // With --sample, the fourth app has no visible window, to show it dimmed.
                 NSWorkspace.shared.runningApplications
                     .filter { $0.activationPolicy == .regular && $0 != .current }
-                    .map(\.processIdentifier)
+                    .enumerated()
+                    .map { index, app in
+                        SwitcherEntry(
+                            pid: app.processIdentifier, name: app.localizedName ?? "App",
+                            windowId: index == 3 && arguments.contains("--sample") ? nil : 1
+                        )
+                    }
             }
         ))
         let view: NSView = if let pane = SettingsPane(rawValue: paneName) {

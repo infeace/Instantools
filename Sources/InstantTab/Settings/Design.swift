@@ -217,6 +217,25 @@ struct CardActions<Content: View>: View {
     }
 }
 
+/// An app's icon in a row, or a stand-in when the app is not installed or the id is a pattern.
+struct AppIcon: View {
+    let info: AppLookup.Info
+    var isPattern = false
+
+    var body: some View {
+        Group {
+            if let icon = info.icon {
+                Image(nsImage: icon).resizable()
+            } else {
+                Image(systemName: isPattern ? "square.stack.3d.up" : "questionmark.app.dashed")
+                    .font(.system(size: 20))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(height: 30)
+    }
+}
+
 /// A running app in an "Add Running App" menu.
 struct AppChoiceLabel: View {
     let app: SettingsModel.AppChoice

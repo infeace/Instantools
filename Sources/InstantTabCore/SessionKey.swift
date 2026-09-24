@@ -3,6 +3,8 @@ public enum KeyCode {
     public static let escape: Int64 = 53
     static let left: Int64 = 123
     static let right: Int64 = 124
+    static let down: Int64 = 125
+    static let up: Int64 = 126
 }
 
 public enum SessionKey: Sendable, Equatable {
@@ -11,6 +13,8 @@ public enum SessionKey: Sendable, Equatable {
     case next
     case quit
     case hide
+    /// App Exposé for the selected app, on Up or Down like native Cmd+Tab.
+    case expose
     /// Any letter or digit other than Q and H. It switches to the app bound to it, if there is one.
     case app(Character)
 
@@ -19,6 +23,7 @@ public enum SessionKey: Sendable, Equatable {
         case KeyCode.escape: self = .cancel
         case KeyCode.left: self = .previous
         case KeyCode.right: self = .next
+        case KeyCode.up, KeyCode.down: self = .expose
         default:
             switch Self.character(keycode: keycode, characters: characters) {
             case "`": self = .previous

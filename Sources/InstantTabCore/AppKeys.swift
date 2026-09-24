@@ -75,6 +75,6 @@ extension SwitcherFilter {
         }
         if let entry = listed.first(where: { $0.pid == app.pid }) { return .running(entry) }
         let window = snapshot.windows.first { $0.pid == app.pid }
-        return .running(SwitcherEntry(pid: app.pid, name: app.name, windowId: window?.id, key: key))
+        return .running(SwitcherEntry(pid: app.pid, name: app.name, windowId: window?.id, key: key, isHidden: app.isHidden))
     }
 }

@@ -31,8 +31,10 @@ final class SwitcherPanel {
     private var selectedIndex = 0
     /// A pid, since the list can change between mouse-down and mouse-up.
     private var pressedPid: Int32?
-    /// Measured once per name, since the selection moves on every Tab.
-    private var nameWidths: [String: CGFloat] = [:]
+    /// Built and measured once per name and state, since the selection moves on every Tab. The colors are
+    /// part of the text, so it is rebuilt when the appearance changes.
+    private var nameTexts: [String: (text: NSAttributedString, width: CGFloat)] = [:]
+    private var isDark = false
 
     var onHover: ((Int) -> Void)?
     var onClick: ((Int) -> Void)?
@@ -166,8 +168,11 @@ final class SwitcherPanel {
         background.borderWidth = 1 / scale
         background.borderColor = (dark ? NSColor(white: 1, alpha: 0.12) : NSColor(white: 0, alpha: 0.1)).cgColor
         highlight.backgroundColor = (dark ? NSColor(white: 1, alpha: 0.16) : NSColor(white: 0, alpha: 0.1)).cgColor
-        nameLayer.foregroundColor = (dark ? NSColor.white : NSColor.black).cgColor
         nameLayer.contentsScale = scale
+        if dark != isDark {
+            isDark = dark
+            nameTexts = [:]
+        }
 
         while tiles.count < entries.count {
             let tile = CALayer()
@@ -191,6 +196,7 @@ final class SwitcherPanel {
             tile.isHidden = false
             tile.contents = icons.icon(for: entries[index].pid)
             tile.contentsScale = scale
+            tile.opacity = entries[index].state == nil ? 1 : Self.dimmedOpacity
             tile.frame = CGRect(
                 x: Metrics.padding + CGFloat(index) * tileSize + tileInset,
                 y: Metrics.padding + Metrics.nameHeight + tileInset,
@@ -211,20 +217,35 @@ final class SwitcherPanel {
         selectedIndex = index
         let x = Metrics.padding + CGFloat(index) * tileSize
         highlight.frame = CGRect(x: x, y: Metrics.padding + Metrics.nameHeight, width: tileSize, height: tileSize)
-        let name = entries[index].name
+        let name = nameText(for: entries[index])
         let label = NameLabel.span(
-            textWidth: nameWidth(name), maxWidth: max(tileSize * 2.5, 160),
+            textWidth: name.width, maxWidth: max(tileSize * 2.5, 160),
             centeredOn: x + tileSize / 2, within: Metrics.padding...(panelWidth - Metrics.padding)
         )
         nameLayer.frame = CGRect(x: label.x, y: Metrics.padding, width: label.width, height: Metrics.nameHeight - 6)
-        nameLayer.string = name
+        nameLayer.string = name.text
     }
 
-    private func nameWidth(_ name: String) -> CGFloat {
-        if let width = nameWidths[name] { return width }
-        let width = Self.measure(name)
-        nameWidths[name] = width
-        return width
+    private func nameText(for entry: SwitcherEntry) -> (text: NSAttributedString, width: CGFloat) {
+        let key = entry.state.map { "\(entry.name)\u{0}\($0)" } ?? entry.name
+        if let cached = nameTexts[key] { return cached }
+        let text = Self.nameText(name: entry.name, state: entry.state, dark: isDark)
+        let result = (text, Self.width(of: text))
+        nameTexts[key] = result
+        return result
+    }
+
+    /// Apps with no visible window, like hidden apps in the Dock.
+    static let dimmedOpacity: Float = 0.5
+
+    /// The state follows the name in a lighter color.
+    static func nameText(name: String, state: String?, dark: Bool) -> NSAttributedString {
+        let text = NSMutableAttributedString(string: name, attributes: [.font: nameFont, .foregroundColor: dark ? NSColor.white : NSColor.black])
+        if let state {
+            let color = NSColor(white: dark ? 1 : 0, alpha: 0.5)
+            text.append(NSAttributedString(string: " · \(state)", attributes: [.font: nameFont, .foregroundColor: color]))
+        }
+        return text
     }
 
     /// Sits on the icon's bottom-right corner, clear of where the Dock puts unread badges.
@@ -265,8 +286,8 @@ final class SwitcherPanel {
     }
 
     /// Matches what the name layer draws, so a label this wide is never truncated.
-    static func measure(_ name: String) -> CGFloat {
-        (name as NSString).size(withAttributes: [.font: nameFont]).width.rounded(.up)
+    static func width(of text: NSAttributedString) -> CGFloat {
+        text.size().width.rounded(.up)
     }
 }
 

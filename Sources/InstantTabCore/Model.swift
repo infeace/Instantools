@@ -4,11 +4,13 @@ public struct RunningApp: Sendable, Equatable {
     public var pid: Int32
     public var bundleId: String?
     public var name: String
+    public var isHidden: Bool
 
-    public init(pid: Int32, bundleId: String?, name: String) {
+    public init(pid: Int32, bundleId: String?, name: String, isHidden: Bool = false) {
         self.pid = pid
         self.bundleId = bundleId
         self.name = name
+        self.isHidden = isHidden
     }
 }
 
@@ -68,11 +70,20 @@ public struct SwitcherEntry: Sendable, Equatable {
     public var windowId: UInt32?
     /// The app key bound to this app, shown on its tile.
     public var key: Character?
+    public var isHidden: Bool
 
-    public init(pid: Int32, name: String, windowId: UInt32?, key: Character? = nil) {
+    public init(pid: Int32, name: String, windowId: UInt32?, key: Character? = nil, isHidden: Bool = false) {
         self.pid = pid
         self.name = name
         self.windowId = windowId
         self.key = key
+        self.isHidden = isHidden
+    }
+
+    /// Shown after the selected app's name, and dims its tile, when switching to it finds no window
+    /// already on screen.
+    public var state: String? {
+        if isHidden { return "Hidden" }
+        return windowId == nil ? "No visible window" : nil
     }
 }

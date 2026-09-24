@@ -65,7 +65,9 @@ struct AppKeysPane: View {
         .fixedSize()
         .disabled(model.runningAppChoices.isEmpty)
         Button("Choose App…") {
-            if let bundleId = model.chooseApp() { toggle(.add(bundleId: bundleId)) }
+            if let bundleId = model.chooseApps(title: "Choose an App", prompt: "Choose", multiple: false).first {
+                toggle(.add(bundleId: bundleId))
+            }
         }
     }
 
@@ -121,16 +123,8 @@ private struct AppKeyRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Group {
-                if let icon = info.icon {
-                    Image(nsImage: icon).resizable()
-                } else {
-                    Image(systemName: "questionmark.app.dashed")
-                        .font(.system(size: 20))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: Card.leadingWidth, height: 30)
+            AppIcon(info: info)
+                .frame(width: Card.leadingWidth)
             VStack(alignment: .leading, spacing: 2) {
                 Text(info.name)
                 Text(subtitle)

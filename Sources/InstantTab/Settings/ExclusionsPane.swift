@@ -7,10 +7,11 @@ struct ExclusionsPane: View {
     @State private var bundleIdText = ""
 
     private var rules: [Config.Exclusion] { model.configStore.config.exclude }
+    private var passThrough: [String] { model.configStore.config.passThrough }
 
     var body: some View {
         PaneScroll { _ in
-            PaneHeader(pane: .exclusions, subtitle: "Apps Cmd+Tab leaves out. Every other running app shows up, like native Cmd+Tab.")
+            PaneHeader(pane: .exclusions, subtitle: "Apps Cmd+Tab leaves out, and apps that get Cmd+Tab for themselves.")
             FileProblemBanner(configStore: model.configStore)
             Group {
                 if !model.altTabRulesToImport.isEmpty { altTabImport }
@@ -30,6 +31,7 @@ struct ExclusionsPane: View {
                     }
                     CardActions { addButtons }
                 }
+                passThroughCard
             }
             .disabled(model.configStore.fileIsBroken)
         }
@@ -46,6 +48,34 @@ struct ExclusionsPane: View {
         Button("Choose Apps…") { model.chooseAppsToExclude() }
         Button("Add by ID…") { addingBundleId = true }
             .popover(isPresented: $addingBundleId, arrowEdge: .bottom) { bundleIdPopover }
+    }
+
+    private var passThroughCard: some View {
+        SettingsCard(
+            title: "Apps that keep Cmd+Tab",
+            footer: "While one of these apps is in front, Cmd+Tab goes to it instead of InstantTab. For virtual machines, remote desktops and games. Click another app to leave it."
+        ) {
+            if passThrough.isEmpty { EmptyRow(text: "None yet.") }
+            ForEach(Array(passThrough.enumerated()), id: \.element) { index, bundleId in
+                if index > 0 { RowDivider(indented: true) }
+                let info = model.apps.info(for: bundleId)
+                SettingsRow(title: info.name, subtitle: info.isMissing ? "\(bundleId), not installed" : bundleId) {
+                    AppIcon(info: info, isPattern: bundleId.hasSuffix("*"))
+                } trailing: {
+                    RemoveButton(help: "Take Cmd+Tab back from \(info.name)") { model.removePassThrough(bundleId) }
+                }
+            }
+            CardActions {
+                Menu("Add Running App") {
+                    ForEach(model.runningAppsToPassThrough, id: \.bundleId) { app in
+                        Button { model.addPassThrough([app.bundleId]) } label: { AppChoiceLabel(app: app) }
+                    }
+                }
+                .fixedSize()
+                .disabled(model.runningAppsToPassThrough.isEmpty)
+                Button("Choose Apps…") { model.chooseAppsToPassThrough() }
+            }
+        }
     }
 
     private var altTabImport: some View {
@@ -113,16 +143,7 @@ private struct ExclusionRow: View {
 
     var body: some View {
         SettingsRow(title: info.name, subtitle: info.isMissing ? "\(rule.bundleId), not installed" : rule.bundleId) {
-            Group {
-                if let icon = info.icon {
-                    Image(nsImage: icon).resizable()
-                } else {
-                    Image(systemName: rule.bundleId.hasSuffix("*") ? "square.stack.3d.up" : "questionmark.app.dashed")
-                        .font(.system(size: 20))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(height: 30)
+            AppIcon(info: info, isPattern: rule.bundleId.hasSuffix("*"))
         } trailing: {
             HStack(spacing: 8) {
                 Picker("Exclude \(info.name)", selection: when) {

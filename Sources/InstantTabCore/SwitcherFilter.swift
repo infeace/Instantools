@@ -18,7 +18,7 @@ public enum SwitcherFilter {
             if exclusions.isExcluded(bundleId: app.bundleId, hasWindows: !windows.isEmpty) { continue }
 
             func entry(_ windowId: UInt32?) -> SwitcherEntry {
-                SwitcherEntry(pid: app.pid, name: app.name, windowId: windowId, key: appKeys.key(for: app.bundleId))
+                SwitcherEntry(pid: app.pid, name: app.name, windowId: windowId, key: appKeys.key(for: app.bundleId), isHidden: app.isHidden)
             }
 
             if let targets {

@@ -23,7 +23,7 @@
 - **Instant.** The switcher reaches the screen within one display frame. Nothing is looked up when you press Tab: apps and windows are tracked in the background and the panel is built once at launch.
 - **Monitor aware.** List apps from every monitor, the one under the mouse, the one you are working on, or a group of monitors defined by rules like "external" or "portrait", so it keeps working when you swap monitors.
 - **Straight to an app.** Bind a key to an app, then Cmd+Tab and that key goes right to it, or opens it if it is not running.
-- **Yours to shape.** Exclude apps always or only when they have no window, set the show delay, and preview the icon size live.
+- **Yours to shape.** Exclude apps always or only when they have no window, let apps like virtual machines keep Cmd+Tab, set the show delay, and preview the icon size live.
 - **Safe.** Native Cmd+Tab comes back whenever InstantTab quits, pauses or crashes.
 
 ## Install
@@ -44,6 +44,7 @@ Requires macOS 14 or later and a Swift 6 toolchain (the Xcode command line tools
 | **Cmd+Tab** | Hold Cmd, press Tab to move, release to switch |
 | **Quick Cmd+Tab** | Jump to the previous app without drawing anything |
 | **Shift, \`, arrows** | Move back, or move with the arrow keys |
+| **Up, Down** | App Exposé for the selected app |
 | **Q, H** | Quit or hide the selected app |
 | **App keys** | Go straight to the app bound to that key (Settings, App Keys) |
 | **Mouse** | Point to select, click to switch |
@@ -61,6 +62,7 @@ Settings and `~/.config/instanttab/config.json5` stay in sync, so edit whichever
   scope: "mouseGroup",
   exclude: [{ bundleId: "com.apple.finder", when: "noWindows" }],
   appKeys: { f: "com.apple.finder", s: "com.apple.Safari" },
+  passThrough: ["com.parallels.desktop.console"],
   displayGroups: [
     { name: "Laptop", match: ["builtIn"] },
     { name: "Desk", match: ["external"] },
@@ -96,6 +98,7 @@ The hot path has one rule: pressing Cmd+Tab does no IPC and never waits on anyth
 - [x] Instant switcher, quick tap, mouse, Q and H, exclusions, monitor scopes and groups
 - [x] Settings window with live preview, config file sync, Start at Login
 - [x] App keys: Cmd+Tab, then a bound key, goes straight to that app
+- [x] App Exposé on Up and Down, apps that keep Cmd+Tab, dimmed apps with no visible window
 - [ ] Keyboard navigation in Settings
 - [ ] One entry per window and per-app rules (deferred)
 - [ ] Multiple shortcuts with their own scope (deferred)

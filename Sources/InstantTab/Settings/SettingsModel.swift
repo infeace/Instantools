@@ -16,7 +16,7 @@ final class SettingsModel {
         var focusedDisplay: () -> UInt32?
         var accessibilityGranted: () -> Bool
         /// Most recently used first, without excluded apps.
-        var recentApps: () -> [Int32]
+        var recentApps: () -> [SwitcherEntry]
     }
 
     struct AppChoice: Equatable {
@@ -49,7 +49,7 @@ final class SettingsModel {
     @ObservationIgnored private let actions: Actions
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private let altTabRules: [Config.Exclusion]
-    @ObservationIgnored private var previewPids: [Int32] = []
+    @ObservationIgnored private var previewEntries: [SwitcherEntry] = []
     @ObservationIgnored private var resolved: (groups: [DisplayGroup], displays: [Display], value: ResolvedGroups)?
 
     init(configStore: ConfigStore, actions: Actions) {
@@ -92,11 +92,11 @@ final class SettingsModel {
         set(\.runningApps, Self.runningApps())
 
         let recent = Array(actions.recentApps().prefix(5))
-        if recent != previewPids {
-            previewPids = recent
-            previewApps = recent.compactMap { pid in
-                guard let app = NSRunningApplication(processIdentifier: pid), let icon = app.icon else { return nil }
-                return PreviewApp(id: pid, name: app.localizedName ?? "App", icon: icon, bundleId: app.bundleIdentifier)
+        if recent != previewEntries {
+            previewEntries = recent
+            previewApps = recent.compactMap { entry in
+                guard let app = NSRunningApplication(processIdentifier: entry.pid), let icon = app.icon else { return nil }
+                return PreviewApp(id: entry.pid, name: entry.name, icon: icon, bundleId: app.bundleIdentifier, state: entry.state)
             }
         }
         let screen = NSScreen.screens.first { $0.displayId == switcherDisplay } ?? NSScreen.main
@@ -151,6 +151,20 @@ final class SettingsModel {
 
     var runningAppChoices: [AppChoice] { runningApps }
 
+    var runningAppsToPassThrough: [AppChoice] {
+        runningApps.filter { !configStore.config.passesThrough($0.bundleId) }
+    }
+
+    func addPassThrough(_ bundleIds: [String]) {
+        configStore.update { config in
+            for bundleId in bundleIds where !config.passesThrough(bundleId) { config.passThrough.append(bundleId) }
+        }
+    }
+
+    func removePassThrough(_ bundleId: String) {
+        configStore.update { $0.passThrough.removeAll { $0 == bundleId } }
+    }
+
     var runningAppsToExclude: [AppChoice] {
         let excluded = Set(configStore.config.exclude.map { $0.bundleId.lowercased() })
         return runningApps.filter { !excluded.contains($0.bundleId.lowercased()) }
@@ -200,28 +214,25 @@ final class SettingsModel {
     }
 
     func chooseAppsToExclude() {
-        let panel = NSOpenPanel()
-        panel.title = "Choose Apps to Exclude"
-        panel.prompt = "Exclude"
-        panel.directoryURL = URL(fileURLWithPath: "/Applications")
-        panel.allowedContentTypes = [.applicationBundle]
-        panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = false
-        guard panel.runModal() == .OK else { return }
-        let rules = panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }.map { Config.Exclusion(bundleId: $0) }
+        let rules = chooseApps(title: "Choose Apps to Exclude", prompt: "Exclude").map { Config.Exclusion(bundleId: $0) }
         configStore.update { $0.addExclusions(rules) }
     }
 
-    /// The bundle id of one app picked from Applications.
-    func chooseApp() -> String? {
+    func chooseAppsToPassThrough() {
+        addPassThrough(chooseApps(title: "Choose Apps That Keep Cmd+Tab", prompt: "Add"))
+    }
+
+    /// Bundle ids of apps picked from Applications.
+    func chooseApps(title: String, prompt: String, multiple: Bool = true) -> [String] {
         let panel = NSOpenPanel()
-        panel.title = "Choose an App"
-        panel.prompt = "Choose"
+        panel.title = title
+        panel.prompt = prompt
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
         panel.allowedContentTypes = [.applicationBundle]
+        panel.allowsMultipleSelection = multiple
         panel.canChooseDirectories = false
-        guard panel.runModal() == .OK, let url = panel.url else { return nil }
-        return Bundle(url: url)?.bundleIdentifier
+        guard panel.runModal() == .OK else { return [] }
+        return panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }
     }
 
     func bindAppKey(_ key: Character, to bundleId: String, replacing current: Character? = nil) {

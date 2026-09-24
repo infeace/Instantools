@@ -1,5 +1,6 @@
 import AppKit
 import InstantTabCore
+import SkyLightShim
 
 @MainActor
 final class SwitcherController {
@@ -27,6 +28,7 @@ final class SwitcherController {
     private var pressNanoseconds: UInt64 = 0
     private var showWork: DispatchWorkItem?
     private var releasePoll: Timer?
+    private var exposeWait: Timer?
     private var lastChoice: (pid: Int32, previousFrontmost: Int32?, nanoseconds: UInt64)?
 
     /// Key press to first frame of the panel, minus the show delay.
@@ -72,17 +74,40 @@ final class SwitcherController {
 
     func sessionKey(_ key: SessionKey) {
         guard let selected = session?.selected else { return }
-        if case .app(let character) = key { return switchToApp(boundTo: character) }
-        // A key pressed before the show delay has passed shows the panel, so nothing happens unseen.
-        if key != .cancel { showNow() }
+        // A key pressed before the show delay has passed shows the panel, so nothing happens unseen. Keys
+        // that leave the switcher at once need no panel.
+        switch key {
+        case .cancel, .expose, .app: break
+        default: showNow()
+        }
         switch key {
         case .cancel: end()
         case .previous: changeSelection { $0.move(by: -1) }
         case .next: changeSelection { $0.move(by: 1) }
         case .quit: quit(selected.pid)
         case .hide: hide(selected.pid)
-        case .app: break
+        case .expose: expose(selected)
+        case .app(let character): switchToApp(boundTo: character)
         }
+    }
+
+    /// Like native Cmd+Tab. App Exposé shows the frontmost app, so it waits up to a second for the switch
+    /// to land.
+    private func expose(_ entry: SwitcherEntry) {
+        commit(entry)
+        exposeWait?.invalidate()
+        let deadline = DispatchTime.now().uptimeNanoseconds + 1_000_000_000
+        let timer = Timer(timeInterval: 0.02, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                let landed = NSWorkspace.shared.frontmostApplication?.processIdentifier == entry.pid
+                guard landed || DispatchTime.now().uptimeNanoseconds > deadline else { return }
+                self?.exposeWait?.invalidate()
+                self?.exposeWait = nil
+                if landed { SkyLight.showAppExpose() }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        exposeWait = timer
     }
 
     /// Switches on the key press, without waiting for Cmd to be released. Within the show delay nothing
@@ -234,8 +259,8 @@ final class SwitcherController {
     }
 
     /// What Cmd+Tab would list from every display, for the Settings preview.
-    func previewPids() -> [Int32] {
-        currentEntries(targets: nil).map(\.pid).filter { $0 != ownPid }
+    func previewEntries() -> [SwitcherEntry] {
+        currentEntries(targets: nil).filter { $0.pid != ownPid }
     }
 
     private func currentEntries(targets: Set<UInt32>?) -> [SwitcherEntry] {

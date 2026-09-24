@@ -7,6 +7,7 @@ struct PreviewApp: Identifiable {
     let name: String
     let icon: NSImage
     let bundleId: String?
+    let state: String?
 }
 
 struct SwitcherPreview: View {
@@ -60,6 +61,7 @@ struct SwitcherPreview: View {
                         .resizable()
                         .interpolation(.high)
                         .frame(width: icon, height: icon)
+                        .opacity(app.state == nil ? 1 : Double(SwitcherPanel.dimmedOpacity))
                         .overlay(alignment: .bottomTrailing) {
                             if let key = keys.key(for: app.bundleId), let image = SwitcherPanel.badgeImage(key) {
                                 Image(decorative: image, scale: 1)
@@ -78,14 +80,15 @@ struct SwitcherPreview: View {
                 }
             }
             let rowWidth = CGFloat(apps.count) * tile
-            let name = apps.indices.contains(selected) ? apps[selected].name : ""
+            let app = apps.indices.contains(selected) ? apps[selected] : nil
+            let name = SwitcherPanel.nameText(name: app?.name ?? "", state: app?.state, dark: dark)
             let label = NameLabel.span(
-                textWidth: SwitcherPanel.measure(name), maxWidth: max(tile * 2.5, 160),
+                textWidth: SwitcherPanel.width(of: name), maxWidth: max(tile * 2.5, 160),
                 centeredOn: (CGFloat(selected) + 0.5) * tile, within: 0...rowWidth
             )
-            Text(name)
+            (Text(app?.name ?? "").foregroundStyle(dark ? Color.white : .black)
+                + Text(app?.state.map { " · \($0)" } ?? "").foregroundStyle(Color(white: dark ? 1 : 0, opacity: 0.5)))
                 .font(Font(SwitcherPanel.nameFont))
-                .foregroundStyle(dark ? .white : .black)
                 .lineLimit(1)
                 .frame(width: label.width, height: nameHeight - 6)
                 .offset(x: label.x + label.width / 2 - rowWidth / 2)
