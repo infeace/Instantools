@@ -9,13 +9,28 @@ final class Focuser: Sendable {
     /// Raising talks to the target app and can stall, so it runs apart from the next focus request.
     private let raiseQueue = DispatchQueue(label: "com.infeace.InstantTab.raise", qos: .userInteractive, attributes: .concurrent)
     private let generation = OSAllocatedUnfairLock(initialState: 0)
+    private let ownPid = ProcessInfo.processInfo.processIdentifier
 
     func focus(_ entry: SwitcherEntry) {
         let token = generation.withLock { value in
             value += 1
             return value
         }
+        // Accessibility calls into this process run AppKit on the calling thread, which crashes off main.
+        // InstantTab's own windows (Settings) are brought forward with AppKit instead.
+        guard entry.pid != ownPid else {
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { Self.focusOwnWindow(entry.windowId) }
+            }
+            return
+        }
         queue.async { [self] in perform(entry, token: token) }
+    }
+
+    @MainActor private static func focusOwnWindow(_ windowId: UInt32?) {
+        let window = windowId.flatMap { NSApp.window(withWindowNumber: Int($0)) }
+            ?? NSApp.windows.first { $0.isVisible && $0.canBecomeKey && $0.level == .normal }
+        if let window { OwnWindow.bringForward(window) } else { NSApp.activate() }
     }
 
     private func isCurrent(_ token: Int) -> Bool {
