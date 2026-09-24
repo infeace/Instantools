@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.infeace.InstantTab.agent</string>
+	<key>BundleProgram</key>
+	<string>Contents/MacOS/InstantTab</string>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>com.infeace.InstantTab</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>INSTANTTAB_LAUNCH_AGENT</key>
+		<string>1</string>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ProcessType</key>
+	<string>Interactive</string>
+	<key>LimitLoadToSessionType</key>
+	<string>Aqua</string>
+</dict>
+</plist>
