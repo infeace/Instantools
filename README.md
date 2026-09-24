@@ -1,72 +1,95 @@
-# InstantTab
+<p align="center">
+  <img src="Resources/AppIcon.png" width="128" alt="InstantTab icon">
+</p>
 
-A macOS Cmd+Tab replacement that opens as fast as the native switcher and is configurable like AltTab: display scope and display groups, excluded apps, one entry per app or per window, and Cmd+` behavior.
+<h1 align="center">InstantTab</h1>
 
-Status: daily driver (roadmap step 2). See [docs/research.md](docs/research.md) for the research and architecture.
+<p align="center">
+  Cmd+Tab for macOS that appears the moment you press it, with the control macOS leaves out.
+</p>
 
-## Requirements
+<p align="center">
+  <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111?logo=apple&logoColor=white">
+  <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
+  <img alt="Draw time" src="https://img.shields.io/badge/draw%20time-under%201%20frame-2ea44f">
+</p>
 
-- macOS 14 or later (developed on macOS 26)
-- Swift 6 toolchain. The Xcode command line tools are enough.
+<p align="center">
+  <img src="docs/images/settings.png" width="760" alt="InstantTab settings">
+</p>
 
-## Setup
+## Why
 
-1. Create the local signing identity, once per machine:
-   ```bash
-   scripts/create-signing-cert.sh
-   ```
-   It adds a self-signed code signing certificate to your login keychain and asks for your password to trust it. Every build is signed with it, so macOS keeps the permissions you grant across rebuilds.
-2. Build, install into `~/Applications` and launch:
-   ```bash
-   scripts/build.sh --install --run
-   ```
-3. Grant Accessibility in System Settings > Privacy & Security when asked. Without it Cmd+Tab still works, but Esc and the arrow keys do not, and windows are not raised within their app.
-4. Quit any other Cmd+Tab replacement (such as AltTab) so they do not both respond.
+- **Instant.** The switcher reaches the screen within one display frame. Nothing is looked up when you press Tab: apps and windows are tracked in the background and the panel is built once at launch.
+- **Monitor aware.** List apps from every monitor, the one under the mouse, the one you are working on, or a group of monitors defined by rules like "external" or "portrait", so it keeps working when you swap monitors.
+- **Yours to shape.** Exclude apps always or only when they have no window, and tune the show delay and icon size with a live preview.
+- **Safe.** Native Cmd+Tab comes back whenever InstantTab quits, pauses or crashes.
 
-## Using it
+## Install
 
-- Hold Cmd and press Tab to move forward, add Shift to move back, release Cmd to switch. Arrow keys also move and Esc cancels.
-- A quick Cmd+Tab switches to the previous app without drawing anything.
-- The menu bar icon shows draw time (key press to first frame, after the show delay), config errors, Start at Login, and Pause, which hands Cmd+Tab back to macOS.
-- Native Cmd+Tab is restored whenever InstantTab quits or crashes. With Start at Login on, a crashed copy is relaunched.
+```bash
+scripts/create-signing-cert.sh      # once per Mac: a local signing identity, so permissions survive rebuilds
+scripts/build.sh --install --run    # build, copy to ~/Applications and launch
+```
 
-## Configuration
+Then allow **Accessibility** when asked. Cmd+Tab works without it, but Esc, the arrow keys and raising the right window need it. Quit any other Cmd+Tab replacement first.
 
-Settings live in `~/.config/instanttab/config.json5`, created with every option documented on first launch. Changes apply on save.
+Requires macOS 14 or later and a Swift 6 toolchain (the Xcode command line tools are enough).
 
-| Key | Values | Default |
-|---|---|---|
-| `showDelayMs` | 0 to 1000 | 50 |
-| `scope` | `"all"`, `"mouseDisplay"`, `"focusedDisplay"`, `"mouseGroup"`, `"group:<name>"` | `"all"` |
-| `windowlessApps` | `"show"`, `"end"`, `"hide"` | `"show"` |
-| `iconSize` | 32 to 256 | 96 |
-| `exclude` | bundle ids, or `{ bundleId, when: "always" \| "noWindows" }`, `*` suffix for prefixes | none |
-| `displayGroups` | `{ name, match: [rules] }`; rules are `"builtIn"`, `"external"`, `"landscape"`, `"portrait"`, `"main"`, `"leftmost"`, `"rightmost"`, `"topmost"`, `"bottommost"`, `{ name: "DELL*" }`, `{ uuid }` | none |
+## Use
 
-Everything here can also be edited in Settings (menu bar icon, then Settings…). Saving from Settings rewrites the file in its documented layout.
+| | |
+|---|---|
+| **Cmd+Tab** | Hold Cmd, press Tab to move, release to switch |
+| **Quick Cmd+Tab** | Jump to the previous app without drawing anything |
+| **Shift, arrows** | Move back, or move with the arrow keys |
+| **Esc** | Cancel |
 
-## Development
+Everything else lives in **Settings** (menu bar icon, then Settings…).
 
-- `swift build` compiles, `scripts/test.sh` runs the unit tests (it adds the flags the command line tools need).
-- `scripts/build.sh` assembles and signs `build/InstantTab.app`. `--debug` builds debug, `--install` copies into `~/Applications` after quitting the running copy, `--run` launches it.
+## Configure
 
-## Layout
+Settings and `~/.config/instanttab/config.json5` stay in sync, so edit whichever you prefer. The file documents every option.
 
-- `Sources/InstantTab`: the app (input, panel, focus).
-- `Sources/InstantTabCore`: pure logic (model, filtering, config, latency stats), unit tested.
-- `Sources/SkyLightShim`: the only place private macOS APIs are declared, resolved at runtime with public fallbacks.
-- `docs/research.md`: research, measurements and the architecture this follows.
+```json5
+{
+  showDelayMs: 50,
+  scope: "mouseGroup",
+  exclude: [{ bundleId: "com.apple.finder", when: "noWindows" }],
+  displayGroups: [
+    { name: "Laptop", match: ["builtIn"] },
+    { name: "Desk", match: ["external"] },
+  ],
+}
+```
 
-## Performance rules
+## Develop
 
-- The key press path does no IPC. It reads the model snapshot that background threads keep fresh.
-- Nothing blocks the main thread. Accessibility and SkyLight queries run off-main with short timeouts.
-- No SwiftUI, glass effects or animations on the show path.
-- Every change to the show path is measured: key press to first frame, p50 and p95.
+```bash
+swift build                  # compile
+scripts/test.sh              # unit tests
+scripts/build.sh             # signed build/InstantTab.app (--debug, --install, --run)
+```
+
+Settings panes render to PNG without Screen Recording permission, for checking UI changes:
+
+```bash
+build/InstantTab.app/Contents/MacOS/InstantTab --snapshot-settings general out.png dark
+```
+
+| Path | What |
+|---|---|
+| `Sources/InstantTab` | The app: input, switcher panel, focus, Settings |
+| `Sources/InstantTabCore` | Pure logic: filtering, monitor groups, config. Unit tested |
+| `Sources/SkyLightShim` | The only place private macOS APIs are touched, each with a fallback |
+| `docs/research.md` | Research, measurements and the architecture behind it |
+
+The hot path has one rule: pressing Cmd+Tab does no IPC and never waits on anything.
 
 ## Roadmap
 
-1. Scaffold: package, build and signing scripts, latency instrumentation. (done)
-2. Daily driver: Cmd+Tab in app mode with quick tap, exclusions, all-displays or mouse-display scope, config file with live reload, login item, native switcher restore. (in testing)
-3. Customization: window mode and per-app overrides, Cmd+`, display groups, multiple shortcut profiles, Spaces and minimized window handling.
-4. Polish: settings window, optional thumbnails, type to search.
+- [x] Instant switcher, quick tap, exclusions, monitor scopes and groups
+- [x] Settings window with live preview, config file sync, Start at Login
+- [ ] Remaining panes in the new design, keyboard navigation
+- [ ] One entry per window and per-app rules (deferred)
+- [ ] Multiple shortcuts with their own scope (deferred)

@@ -108,7 +108,7 @@ Enumeration is not the bottleneck. The panel is display-bound once it is pre-cre
 - Ad-hoc signing makes the designated requirement the cdhash, so every rebuild is a new app to TCC and Accessibility and Input Monitoring grants are lost.
 - Fix: sign every build with one stable identity (self-signed code signing certificate or a free Apple Development certificate) and a fixed bundle id.
 - Quit the app before replacing its binary. Health-check the tap with `CGEventTapIsEnabled` and `CGPreflightListenEventAccess`.
-- A locally built, non-sandboxed, non-notarized app runs fine. Login item via `SMAppService.mainApp`, with a LaunchAgent as fallback.
+- A locally built, non-sandboxed, non-notarized app runs fine. Start at login uses a classic LaunchAgent in `~/Library/LaunchAgents`: without a Team ID, macOS pins an `SMAppService` agent to the exact binary that registered it, so every rebuild fails its launch constraint.
 
 ### macOS 26 and 27
 
