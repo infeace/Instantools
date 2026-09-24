@@ -47,21 +47,8 @@ struct SwitcherPreview: View {
             .frame(width: area.width, height: area.height)
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
         }
-        .background(desktop)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-
-    private var desktop: some View {
-        Rectangle()
-            .fill(LinearGradient(
-                colors: colorScheme == .dark
-                    ? [Color(red: 0.13, green: 0.16, blue: 0.34), Color(red: 0.30, green: 0.16, blue: 0.40)]
-                    : [Color(red: 0.55, green: 0.66, blue: 0.98), Color(red: 0.80, green: 0.62, blue: 0.95)],
-                startPoint: .topLeading, endPoint: .bottomTrailing
-            ))
-            .overlay {
-                RadialGradient(colors: [.white.opacity(0.28), .clear], center: .topTrailing, startRadius: 0, endRadius: 360)
-            }
+        .background(Wallpaper())
+        .clipShape(Hero.shape)
     }
 
     private func panel(_ shown: [PreviewApp], tile: CGFloat) -> some View {

@@ -127,30 +127,177 @@ func adaptiveLayout(compact: Bool, spacing: CGFloat = 16) -> AnyLayout {
         : AnyLayout(HStackLayout(alignment: .center, spacing: spacing))
 }
 
-struct SettingsRow<Trailing: View>: View {
+struct SettingsRow<Leading: View, Trailing: View>: View {
     let title: String
     var subtitle: String?
+    @ViewBuilder let leading: Leading
     @ViewBuilder let trailing: Trailing
     @Environment(\.compactLayout) private var compact
+
+    private let leadingWidth: CGFloat = 30
+    private var hasLeading: Bool { Leading.self != EmptyView.self }
 
     var body: some View {
         let layout = adaptiveLayout(compact: compact)
         layout {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 12) {
+                if hasLeading { leading.frame(width: leadingWidth) }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
             if !compact { Spacer(minLength: 12) }
-            trailing
+            // Stacked under the text, not under the icon.
+            trailing.padding(.leading, compact && hasLeading ? leadingWidth + 12 : 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+    }
+}
+
+extension SettingsRow where Leading == EmptyView {
+    init(title: String, subtitle: String? = nil, @ViewBuilder trailing: () -> Trailing) {
+        self.init(title: title, subtitle: subtitle, leading: { EmptyView() }, trailing: trailing)
+    }
+}
+
+struct EmptyRow: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+    }
+}
+
+/// The last row of a list card. The buttons wrap onto their own lines when the row is too narrow.
+struct CardActions<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { content }
+            VStack(alignment: .leading, spacing: 8) { content }
+        }
+        .glassButton()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+}
+
+struct RemoveButton: View {
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "minus.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.borderless)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}
+
+/// A card that asks for one action.
+struct Callout: View {
+    let symbol: String
+    let colors: [Color]
+    let title: String
+    let message: String
+    let action: String
+    let perform: () -> Void
+    @Environment(\.compactLayout) private var compact
+
+    var body: some View {
+        let layout = adaptiveLayout(compact: compact, spacing: 12)
+        let tint = colors.first ?? .accentColor
+        HStack(alignment: compact ? .top : .center, spacing: 14) {
+            IconTile(symbol: symbol, colors: colors, size: 34)
+            layout {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.headline)
+                    Text(message)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !compact { Spacer(minLength: 0) }
+                Button(action, action: perform)
+                    .glassButton(prominent: true)
+                    .controlSize(.large)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(0.08), in: Card.shape)
+        .overlay(Card.shape.strokeBorder(tint.opacity(0.3)))
+    }
+}
+
+enum Hero {
+    static let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+}
+
+/// The desktop the hero previews sit on.
+struct Wallpaper: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Rectangle()
+            .fill(LinearGradient(
+                colors: colorScheme == .dark
+                    ? [Color(red: 0.13, green: 0.16, blue: 0.34), Color(red: 0.30, green: 0.16, blue: 0.40)]
+                    : [Color(red: 0.55, green: 0.66, blue: 0.98), Color(red: 0.80, green: 0.62, blue: 0.95)],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            ))
+            .overlay {
+                RadialGradient(colors: [.white.opacity(0.28), .clear], center: .topTrailing, startRadius: 0, endRadius: 360)
+            }
+    }
+}
+
+/// Floats on a hero. Stays on one or two lines so the hero keeps its height.
+struct StatusBar<Leading: View, Trailing: View>: View {
+    let title: String
+    var subtitle: String?
+    @ViewBuilder let leading: Leading
+    @ViewBuilder let trailing: Trailing
+
+    var body: some View {
+        HStack(spacing: 12) {
+            leading
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.headline)
+                    .lineLimit(1)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 8)
+            trailing
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+        .glassPanel(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
@@ -198,24 +345,6 @@ struct FileProblemBanner: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.red.opacity(0.08), in: Card.shape)
             .overlay(Card.shape.strokeBorder(Color.red.opacity(0.3)))
-        }
-    }
-}
-
-struct FileProblemSection: View {
-    let configStore: ConfigStore
-
-    var body: some View {
-        if configStore.fileIsBroken, let error = configStore.error {
-            Section {
-                LabeledContent {
-                    Button("Open File") { configStore.openInEditor() }
-                } label: {
-                    Label("The settings file has an error", systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                    Text("Changes here are paused until it is fixed. \(error)")
-                }
-            }
         }
     }
 }

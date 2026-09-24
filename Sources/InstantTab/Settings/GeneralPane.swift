@@ -10,7 +10,16 @@ struct GeneralPane: View {
             PaneHeader(pane: .general, subtitle: "How InstantTab takes over Cmd+Tab and how the switcher looks.")
             FileProblemBanner(configStore: model.configStore)
             hero(compact: compact)
-            if !model.accessibilityGranted { permissionCard(compact: compact) }
+            if !model.accessibilityGranted {
+                Callout(
+                    symbol: "hand.raised.fill",
+                    colors: [.orange, Color(red: 0.93, green: 0.42, blue: 0.1)],
+                    title: "Allow Accessibility access",
+                    message: "Cmd+Tab already works. With access, Esc, the arrow keys, Q and H work in the switcher, and the right window of an app comes forward.",
+                    action: "Allow…",
+                    perform: model.grantAccessibility
+                )
+            }
             speed(compact: compact)
             Group {
                 switcher
@@ -33,56 +42,20 @@ struct GeneralPane: View {
         .overlay(alignment: .bottom) {
             statusBar(compact: compact).padding(12)
         }
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Card.stroke))
+        .overlay(Hero.shape.strokeBorder(Card.stroke))
     }
 
     private func statusBar(compact: Bool) -> some View {
-        HStack(spacing: 12) {
+        StatusBar(
+            title: model.isPaused ? "Paused" : "InstantTab handles Cmd+Tab",
+            subtitle: compact ? nil : model.isPaused ? "Cmd+Tab opens the macOS switcher for now." : "Hold Cmd and press Tab. Release to switch."
+        ) {
             StatusDot(color: model.isPaused ? .orange : .green)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(model.isPaused ? "Paused" : "InstantTab handles Cmd+Tab")
-                    .font(.headline)
-                    .lineLimit(1)
-                if !compact {
-                    Text(model.isPaused ? "Cmd+Tab opens the macOS switcher for now." : "Hold Cmd and press Tab. Release to switch.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            Spacer(minLength: 8)
+        } trailing: {
             Toggle("Use InstantTab for Cmd+Tab", isOn: model.enabled)
                 .toggleStyle(.switch)
                 .labelsHidden()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 11)
-        .glassPanel(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-    }
-
-    private func permissionCard(compact: Bool) -> some View {
-        let layout = adaptiveLayout(compact: compact, spacing: 12)
-        return HStack(alignment: compact ? .top : .center, spacing: 14) {
-            IconTile(symbol: "hand.raised.fill", colors: [.orange, Color(red: 0.93, green: 0.42, blue: 0.1)], size: 34)
-            layout {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Allow Accessibility access")
-                        .font(.headline)
-                    Text("Cmd+Tab already works. With access, Esc, the arrow keys, Q and H work in the switcher, and the right window of an app comes forward.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if !compact { Spacer(minLength: 0) }
-                Button("Allow…") { model.grantAccessibility() }
-                    .glassButton(prominent: true)
-                    .controlSize(.large)
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(0.08), in: Card.shape)
-        .overlay(Card.shape.strokeBorder(Color.orange.opacity(0.3)))
     }
 
     private func speed(compact: Bool) -> some View {

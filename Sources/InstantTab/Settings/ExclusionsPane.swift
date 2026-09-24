@@ -9,13 +9,18 @@ struct ExclusionsPane: View {
     private var rules: [Config.Exclusion] { model.configStore.config.exclude }
 
     var body: some View {
-        Form {
-            FileProblemSection(configStore: model.configStore)
+        PaneScroll { _ in
+            PaneHeader(pane: .exclusions, subtitle: "Apps Cmd+Tab leaves out. Every other running app shows up, like native Cmd+Tab.")
+            FileProblemBanner(configStore: model.configStore)
             Group {
-                Section {
+                if !model.altTabRulesToImport.isEmpty { altTabImport }
+                SettingsCard(
+                    title: "Excluded apps",
+                    footer: "\"When it has no windows\" leaves an app out only while none of its windows are open, which suits apps like Finder."
+                ) {
                     if rules.isEmpty {
-                        Text("No excluded apps. Every running app shows up, like native Cmd+Tab.")
-                            .foregroundStyle(.secondary)
+                        EmptyRow(text: "No excluded apps yet.")
+                        RowDivider()
                     } else {
                         ForEach(rules, id: \.bundleId) { rule in
                             ExclusionRow(
@@ -24,61 +29,52 @@ struct ExclusionsPane: View {
                                 when: model.exclusionWhen(rule.bundleId),
                                 remove: { model.removeExclusion(rule.bundleId) }
                             )
+                            RowDivider()
                         }
                     }
-                } header: {
-                    Text("Excluded apps")
-                } footer: {
-                    footer
-                }
-                if !model.altTabRulesToImport.isEmpty {
-                    altTabImport
+                    CardActions { addButtons }
                 }
             }
             .disabled(model.configStore.fileIsBroken)
         }
-        .formStyle(.grouped)
         .navigationTitle("Excluded Apps")
     }
 
-    private var footer: some View {
-        HStack {
-            Menu("Add Running App") {
-                ForEach(model.runningAppsToExclude, id: \.bundleId) { app in
-                    Button {
-                        model.exclude(app.bundleId)
-                    } label: {
-                        if let icon = AppLookup.menuIcon(app.icon) {
-                            Label { Text(app.name) } icon: { Image(nsImage: icon) }
-                        } else {
-                            Text(app.name)
-                        }
+    @ViewBuilder private var addButtons: some View {
+        Menu("Add Running App") {
+            ForEach(model.runningAppsToExclude, id: \.bundleId) { app in
+                Button {
+                    model.exclude(app.bundleId)
+                } label: {
+                    if let icon = AppLookup.menuIcon(app.icon) {
+                        Label { Text(app.name) } icon: { Image(nsImage: icon) }
+                    } else {
+                        Text(app.name)
                     }
                 }
             }
-            .fixedSize()
-            .disabled(model.runningAppsToExclude.isEmpty)
-            Button("Choose App…") { model.chooseAppsToExclude() }
-            Button("Add by ID…") { addingBundleId = true }
-                .popover(isPresented: $addingBundleId, arrowEdge: .bottom) { bundleIdPopover }
-            Spacer()
         }
+        .menuStyle(.button)
+        .fixedSize()
+        .disabled(model.runningAppsToExclude.isEmpty)
+        Button("Choose App…") { model.chooseAppsToExclude() }
+        Button("Add by ID…") { addingBundleId = true }
+            .popover(isPresented: $addingBundleId, arrowEdge: .bottom) { bundleIdPopover }
     }
 
     private var altTabImport: some View {
-        let rules = model.altTabRulesToImport
-        let names = rules.map { rule in
+        let names = model.altTabRulesToImport.map { rule in
             let name = model.apps.info(for: rule.bundleId).name
             return rule.when == .noWindows ? "\(name) (when it has no windows)" : name
         }
-        return Section {
-            LabeledContent {
-                Button("Import") { model.importAltTab() }
-            } label: {
-                Text("Import from AltTab")
-                Text("AltTab hides \(names.formatted(.list(type: .and))). Your current rules stay as they are.")
-            }
-        }
+        return Callout(
+            symbol: "square.and.arrow.down.fill",
+            colors: [Color(red: 0.33, green: 0.62, blue: 1), Color(red: 0.13, green: 0.42, blue: 0.93)],
+            title: "Import from AltTab",
+            message: "AltTab hides \(names.formatted(.list(type: .and))). Your current rules stay as they are.",
+            action: "Import",
+            perform: model.importAltTab
+        )
     }
 
     private var bundleIdPopover: some View {
@@ -124,36 +120,27 @@ private struct ExclusionRow: View {
     let remove: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
+        SettingsRow(title: info.name, subtitle: info.isInstalled ? rule.bundleId : "\(rule.bundleId), not installed") {
             Group {
                 if let icon = info.icon {
                     Image(nsImage: icon).resizable()
                 } else {
                     Image(systemName: rule.bundleId.hasSuffix("*") ? "square.stack.3d.up" : "questionmark.app.dashed")
-                        .font(.system(size: 18))
+                        .font(.system(size: 20))
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(width: 26, height: 26)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(info.name)
-                Text(info.isInstalled ? rule.bundleId : "\(rule.bundleId), not installed")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            .frame(width: 30, height: 30)
+        } trailing: {
+            HStack(spacing: 8) {
+                Picker("Exclude", selection: when) {
+                    Text("Always").tag(Config.Exclusion.When.always)
+                    Text("When it has no windows").tag(Config.Exclusion.When.noWindows)
+                }
+                .labelsHidden()
+                .fixedSize()
+                RemoveButton(help: "Stop excluding \(info.name)", action: remove)
             }
-            Spacer()
-            Picker("Exclude", selection: when) {
-                Text("Always").tag(Config.Exclusion.When.always)
-                Text("When it has no windows").tag(Config.Exclusion.When.noWindows)
-            }
-            .labelsHidden()
-            .fixedSize()
-            Button(action: remove) {
-                Image(systemName: "minus.circle.fill")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.borderless)
-            .help("Stop excluding \(info.name)")
         }
     }
 }

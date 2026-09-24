@@ -61,6 +61,8 @@ struct SettingsView: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 SidebarHeader(model: model)
             }
+            // Only takes effect on the sidebar column, and must come before its width.
+            .toolbar(removing: .sidebarToggle)
             .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
         } detail: {
             switch selection ?? .general {
@@ -70,7 +72,6 @@ struct SettingsView: View {
             case .about: AboutPane(model: model)
             }
         }
-        .toolbar(removing: .sidebarToggle)
         .modernToolbar()
     }
 

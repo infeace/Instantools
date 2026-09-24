@@ -6,66 +6,16 @@ struct MonitorsPane: View {
     @State private var editing: GroupDraft?
 
     var body: some View {
-        Form {
-            FileProblemSection(configStore: model.configStore)
+        PaneScroll { compact in
+            PaneHeader(pane: .monitors, subtitle: "Choose which monitors Cmd+Tab lists apps from.")
+            FileProblemBanner(configStore: model.configStore)
+            arrangement(compact: compact)
             Group {
-                Section {
-                    DisplayArrangement(model: model)
-                        .frame(height: 210)
-                } header: {
-                    Text("Your monitors")
-                } footer: {
-                    Text("Highlighted monitors are the ones Cmd+Tab lists apps from right now. The pointer marks the monitor under the mouse.")
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Show apps from") {
-                    Picker("Show apps from", selection: model.binding(\.scope)) {
-                        ForEach(model.scopeOptions, id: \.self) { scope in
-                            Text(scope.title(groupExists: model.groups.contains { $0.name == scope.groupName })).tag(scope)
-                        }
-                    }
-                    .pickerStyle(.radioGroup)
-                    .labelsHidden()
-                    LabeledContent {
-                        Text(currentTargetNames)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.trailing)
-                    } label: {
-                        Text("Right now")
-                        Text(model.configStore.config.scope.explanation)
-                    }
-                }
-
-                Section {
-                    if model.groups.isEmpty {
-                        Text("No groups yet. A group combines monitors, for example every external one, and keeps working when you swap monitors because it matches by kind, shape or position.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(model.groups, id: \.name) { group in
-                            GroupRow(
-                                group: group,
-                                color: model.color(ofGroup: group.name),
-                                members: memberNames(group),
-                                edit: { editing = GroupDraft(group: group, originalName: group.name) },
-                                delete: { model.deleteGroup(group.name) }
-                            )
-                        }
-                    }
-                } header: {
-                    Text("Monitor groups")
-                } footer: {
-                    HStack {
-                        Button("New Group…") {
-                            editing = GroupDraft(group: DisplayGroup(name: model.newGroupName(), rules: []), originalName: nil)
-                        }
-                        Spacer()
-                    }
-                }
+                scope
+                groups
             }
             .disabled(model.configStore.fileIsBroken)
         }
-        .formStyle(.grouped)
         .navigationTitle("Monitors")
         .sheet(item: $editing) { draft in
             GroupEditor(
@@ -77,13 +27,112 @@ struct MonitorsPane: View {
         }
     }
 
+    private func arrangement(compact: Bool) -> some View {
+        VStack(spacing: 12) {
+            DisplayArrangement(model: model)
+                .frame(height: compact ? 170 : 210)
+            StatusBar(
+                title: "Cmd+Tab lists apps from \(currentTargetNames)",
+                subtitle: compact ? nil : "Highlighted monitors are listed. The pointer marks the one under the mouse."
+            ) {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.35))
+                    .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(Color.accentColor, lineWidth: 1.5))
+                    .frame(width: 18, height: 13)
+            } trailing: {
+                EmptyView()
+            }
+        }
+        .padding(12)
+        .background(Wallpaper())
+        .clipShape(Hero.shape)
+        .overlay(Hero.shape.strokeBorder(Card.stroke))
+    }
+
+    private var scope: some View {
+        let selected = model.configStore.config.scope
+        return SettingsCard(title: "Show apps from") {
+            ForEach(Array(model.scopeOptions.enumerated()), id: \.element) { index, option in
+                if index > 0 { RowDivider() }
+                let groupExists = model.groups.contains { $0.name == option.groupName }
+                ScopeRow(
+                    title: option.title(groupExists: groupExists),
+                    subtitle: option.explanation,
+                    symbol: option.groupName == nil ? option.symbol : groupExists ? "circle.fill" : "exclamationmark.triangle",
+                    tint: option.groupName.flatMap { groupExists ? model.color(ofGroup: $0) : nil },
+                    isSelected: option == selected,
+                    select: { model.binding(\.scope).wrappedValue = option }
+                )
+            }
+        }
+    }
+
+    private var groups: some View {
+        SettingsCard(
+            title: "Monitor groups",
+            footer: "A group combines monitors, for example every external one. It matches by kind, shape or position, so it keeps working when you swap monitors."
+        ) {
+            if model.groups.isEmpty {
+                EmptyRow(text: "No groups yet.")
+                RowDivider()
+            } else {
+                ForEach(model.groups, id: \.name) { group in
+                    GroupRow(
+                        group: group,
+                        color: model.color(ofGroup: group.name),
+                        members: memberNames(group),
+                        edit: { editing = GroupDraft(group: group, originalName: group.name) },
+                        delete: { model.deleteGroup(group.name) }
+                    )
+                    RowDivider()
+                }
+            }
+            CardActions {
+                Button {
+                    editing = GroupDraft(group: DisplayGroup(name: model.newGroupName(), rules: []), originalName: nil)
+                } label: {
+                    Label("New Group…", systemImage: "plus")
+                }
+            }
+        }
+    }
+
     private var currentTargetNames: String {
-        guard let targets = model.currentTargets else { return "All monitors" }
-        return model.displayNames(targets, empty: "All monitors")
+        guard let targets = model.currentTargets else { return "all monitors" }
+        return model.displayNames(targets, empty: "all monitors")
     }
 
     private func memberNames(_ group: DisplayGroup) -> String {
         model.displayNames(group.members(in: model.displays), empty: "No monitor connected")
+    }
+}
+
+private struct ScopeRow: View {
+    let title: String
+    let subtitle: String
+    let symbol: String
+    let tint: Color?
+    let isSelected: Bool
+    let select: () -> Void
+
+    var body: some View {
+        Button(action: select) {
+            SettingsRow(title: title, subtitle: subtitle) {
+                Image(systemName: symbol)
+                    .font(.system(size: tint == nil ? 15 : 10, weight: .medium))
+                    .foregroundStyle(tint ?? (isSelected ? Color.accentColor : Color.secondary))
+            } trailing: {
+                Image(systemName: "checkmark")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.tint)
+                    .opacity(isSelected ? 1 : 0)
+            }
+            // A checkmark never needs its own line.
+            .environment(\.compactLayout, false)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -132,12 +181,16 @@ private struct DisplayTile: View {
     let inScope: Bool
     let hasMouse: Bool
     let groupColors: [Color]
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        let dark = colorScheme == .dark
         shape
-            .fill(inScope ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.08))
-            .overlay(shape.strokeBorder(inScope ? Color.accentColor : Color.secondary.opacity(0.35), lineWidth: inScope ? 2 : 1))
+            .fill(inScope ? Color.accentColor.opacity(dark ? 0.35 : 0.3) : Color.black.opacity(dark ? 0.3 : 0.12))
+            .background(shape.fill(.regularMaterial))
+            .overlay(shape.strokeBorder(inScope ? Color.accentColor : Color.white.opacity(dark ? 0.2 : 0.5), lineWidth: inScope ? 2 : 1))
+            .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
             .overlay {
                 VStack(spacing: 2) {
                     Text(display.name)
@@ -153,6 +206,7 @@ private struct DisplayTile: View {
                     }
                 }
                 .padding(6)
+                .opacity(inScope ? 1 : 0.7)
             }
             .overlay(alignment: .topLeading) {
                 HStack(spacing: 3) {
@@ -197,24 +251,17 @@ private struct GroupRow: View {
     let delete: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
+        SettingsRow(
+            title: group.name,
+            subtitle: "\(group.rules.isEmpty ? "No rules yet" : "Matches \(DisplayRule.summary(of: group.rules))")\nNow: \(members)"
+        ) {
             Circle().fill(color).frame(width: 10, height: 10)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(group.name)
-                Text(group.rules.isEmpty ? "No rules yet" : "Matches \(DisplayRule.summary(of: group.rules))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("Now: \(members)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        } trailing: {
+            HStack(spacing: 8) {
+                Button("Edit…", action: edit)
+                    .glassButton()
+                RemoveButton(help: "Delete \(group.name)", action: delete)
             }
-            Spacer()
-            Button("Edit…", action: edit)
-            Button(action: delete) {
-                Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
-            }
-            .buttonStyle(.borderless)
-            .help("Delete \(group.name)")
         }
     }
 }
@@ -385,6 +432,16 @@ struct GroupEditor: View {
 }
 
 extension Config.Scope {
+    var symbol: String {
+        switch self {
+        case .all: "square.grid.2x2"
+        case .mouseDisplay: "cursorarrow"
+        case .focusedDisplay: "macwindow"
+        case .mouseGroup: "cursorarrow.rays"
+        case .group: "circle.fill"
+        }
+    }
+
     var groupName: String? {
         if case .group(let name) = self { name } else { nil }
     }
