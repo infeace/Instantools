@@ -29,6 +29,8 @@ final class SwitcherController {
     private var showWork: DispatchWorkItem?
     private var releasePoll: Timer?
     private var exposeWait: Timer?
+    /// Set when InstantTab opens App Exposé, so the next switch closes it.
+    private var exposeOpened = false
     private var lastChoice: (pid: Int32, previousFrontmost: Int32?, nanoseconds: UInt64)?
 
     /// Key press to first frame of the panel, minus the show delay.
@@ -103,7 +105,7 @@ final class SwitcherController {
                 guard landed || DispatchTime.now().uptimeNanoseconds > deadline else { return }
                 self?.exposeWait?.invalidate()
                 self?.exposeWait = nil
-                if landed { SkyLight.showAppExpose() }
+                if landed { self?.exposeOpened = SkyLight.showAppExpose() }
             }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -121,7 +123,7 @@ final class SwitcherController {
             commit(entry)
         case .launch(let bundleId):
             end()
-            focuser.launch(bundleId: bundleId)
+            focuser.launch(bundleId: bundleId, closingExpose: takeExposeToClose())
         }
     }
 
@@ -228,10 +230,15 @@ final class SwitcherController {
 
     private func commit(_ chosen: SwitcherEntry? = nil) {
         guard let entry = chosen ?? session?.selected else { return end() }
-        focuser.focus(entry)
+        focuser.focus(entry, closingExpose: takeExposeToClose())
         lastChoice = (entry.pid, NSWorkspace.shared.frontmostApplication?.processIdentifier, DispatchTime.now().uptimeNanoseconds)
         end()
         tracker.noteChosen(entry.pid)
+    }
+
+    private func takeExposeToClose() -> Bool {
+        defer { exposeOpened = false }
+        return exposeOpened
     }
 
     private func end() {

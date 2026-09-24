@@ -24,7 +24,7 @@ final class WindowTracker {
 
     func start() {
         reloadApps(publishing: false)
-        windows = Self.queryWindows()
+        windows = Self.queryWindows() ?? []
         seedOrder()
         publish()
 
@@ -82,9 +82,10 @@ final class WindowTracker {
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     self.refreshInFlight = false
-                    let changed = windows != self.windows
-                    self.windows = windows
-                    if changed { self.publish() }
+                    if let windows, windows != self.windows {
+                        self.windows = windows
+                        self.publish()
+                    }
                     if self.refreshPending {
                         self.refreshPending = false
                         self.refreshWindows()
@@ -139,10 +140,12 @@ final class WindowTracker {
         onChange?()
     }
 
-    /// On-screen, normal-level windows front to back (the panel is above normal level). About 1ms.
-    nonisolated private static func queryWindows() -> [WindowRecord] {
+    /// On-screen, normal-level windows front to back (the panel is above normal level). About 1ms. Nil
+    /// while Mission Control or App Exposé is up, since it takes every window off screen without closing any.
+    nonisolated private static func queryWindows() -> [WindowRecord]? {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]] else { return [] }
+        if dockCoversADisplay(list) { return nil }
         return list.compactMap { info in
             guard (info[kCGWindowLayer as String] as? Int) == 0,
                   let pid = info[kCGWindowOwnerPID as String] as? Int32,
@@ -154,6 +157,28 @@ final class WindowTracker {
                   frame.width >= 40, frame.height >= 40
             else { return nil }
             return WindowRecord(id: id, pid: pid, frame: frame)
+        }
+    }
+
+    nonisolated static func dockOverlayIsUp() -> Bool {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else { return false }
+        return dockCoversADisplay(list)
+    }
+
+    /// Mission Control and App Exposé are Dock windows at about the Dock's level that cover a whole display.
+    /// The Dock itself sits at that level too but never covers a display.
+    nonisolated private static func dockCoversADisplay(_ list: [[String: Any]]) -> Bool {
+        var ids = [CGDirectDisplayID](repeating: 0, count: 16)
+        var count: UInt32 = 0
+        guard CGGetActiveDisplayList(UInt32(ids.count), &ids, &count) == .success else { return false }
+        let displays = ids.prefix(Int(count)).map(CGDisplayBounds)
+        return list.contains { info in
+            guard info[kCGWindowOwnerName as String] as? String == "Dock",
+                  let layer = info[kCGWindowLayer as String] as? Int, (18...20).contains(layer),
+                  let boundsInfo = info[kCGWindowBounds as String] as? NSDictionary,
+                  let frame = CGRect(dictionaryRepresentation: boundsInfo)
+            else { return false }
+            return displays.contains(frame)
         }
     }
 }

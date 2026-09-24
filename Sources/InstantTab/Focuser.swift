@@ -9,28 +9,37 @@ final class Focuser: Sendable {
     private let raiseQueue = DispatchQueue(label: "com.infeace.InstantTab.raise", qos: .userInteractive, attributes: .concurrent)
     private let generation = OSAllocatedUnfairLock(initialState: 0)
 
-    func focus(_ entry: SwitcherEntry) {
+    /// `closingExpose` is set after InstantTab opened App Exposé, which would otherwise stay over the app.
+    func focus(_ entry: SwitcherEntry, closingExpose: Bool = false) {
         let token = nextToken()
         // Accessibility calls into this process run AppKit on the calling thread, which crashes off main,
         // so InstantTab's own windows are brought forward with AppKit.
-        guard entry.pid != ownPid else {
+        if entry.pid == ownPid {
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { Self.focusOwnWindow(entry.windowId) }
             }
-            return
+        } else {
+            queue.async { [self] in perform(entry, token: token) }
         }
-        queue.async { [self] in perform(entry, token: token) }
+        // After the switch, so App Exposé closes onto the new app instead of the one it was showing.
+        if closingExpose { queue.async { Self.closeExpose() } }
     }
 
     /// For an app key whose app is not running. Opening it cancels any focus still in flight.
-    func launch(bundleId: String) {
+    func launch(bundleId: String, closingExpose: Bool = false) {
         _ = nextToken()
         queue.async {
+            defer { if closingExpose { Self.closeExpose() } }
             guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) else {
                 return DispatchQueue.main.async { NSSound.beep() }
             }
             NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
         }
+    }
+
+    /// Sending App Exposé again closes it, so it is sent only while App Exposé is still up.
+    private static func closeExpose() {
+        if WindowTracker.dockOverlayIsUp() { SkyLight.showAppExpose() }
     }
 
     private func nextToken() -> Int {
