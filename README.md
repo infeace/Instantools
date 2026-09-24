@@ -22,7 +22,7 @@
 
 - **Instant.** The switcher reaches the screen within one display frame. Nothing is looked up when you press Tab: apps and windows are tracked in the background and the panel is built once at launch.
 - **Monitor aware.** List apps from every monitor, the one under the mouse, the one you are working on, or a group of monitors defined by rules like "external" or "portrait", so it keeps working when you swap monitors.
-- **Yours to shape.** Exclude apps always or only when they have no window, and tune the show delay and icon size with a live preview.
+- **Yours to shape.** Exclude apps always or only when they have no window, set the show delay, and preview the icon size live.
 - **Safe.** Native Cmd+Tab comes back whenever InstantTab quits, pauses or crashes.
 
 ## Install
@@ -90,8 +90,8 @@ The hot path has one rule: pressing Cmd+Tab does no IPC and never waits on anyth
 
 ## Roadmap
 
-- [x] Instant switcher, quick tap, exclusions, monitor scopes and groups
+- [x] Instant switcher, quick tap, mouse, Q and H, exclusions, monitor scopes and groups
 - [x] Settings window with live preview, config file sync, Start at Login
-- [ ] Remaining panes in the new design, keyboard navigation
+- [ ] Keyboard navigation in Settings
 - [ ] One entry per window and per-app rules (deferred)
 - [ ] Multiple shortcuts with their own scope (deferred)
