@@ -3,7 +3,6 @@ import InstantTabCore
 import Observation
 import SwiftUI
 
-/// State and actions behind the Settings window. Lives only while the window is open.
 @MainActor
 @Observable
 final class SettingsModel {
@@ -13,31 +12,35 @@ final class SettingsModel {
         var latency: () -> LatencyStats
         var displays: () -> [Display]
         var mouseDisplay: () -> UInt32?
-        /// Running apps, most recently used first, for the switcher preview.
+        var accessibilityGranted: () -> Bool
+        /// Most recently used first, without excluded apps.
         var recentApps: () -> [Int32]
+    }
+
+    struct AppChoice: Equatable {
+        var bundleId: String
+        var name: String
+        var icon: NSImage?
     }
 
     let configStore: ConfigStore
     private(set) var isPaused = false
     private(set) var accessibilityGranted = false
     private(set) var loginEnabled = false
-    private(set) var loginNeedsApproval = false
+    private(set) var loginBlocked = false
     private(set) var loginError: String?
     private(set) var latency = LatencyStats()
-    /// One refresh of the main display, to put draw time in context.
+    /// One refresh of the display under the mouse, where the switcher appears.
     private(set) var frameMilliseconds = 1000.0 / 60
     private(set) var displayName = "this display"
     private(set) var displays: [Display] = []
     private(set) var mouseDisplay: UInt32?
     private(set) var previewApps: [PreviewApp] = []
-
-    let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
-    let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
+    private(set) var runningAppsToExclude: [AppChoice] = []
 
     @ObservationIgnored let apps = AppLookup()
     @ObservationIgnored private let actions: Actions
     @ObservationIgnored private var timer: Timer?
-    /// AltTab's hide rules, read once when Settings opens.
     @ObservationIgnored private let altTabRules: [Config.Exclusion]
 
     init(configStore: ConfigStore, actions: Actions) {
@@ -48,7 +51,6 @@ final class SettingsModel {
         refresh()
     }
 
-    /// Permissions, login state and draw time change outside the app, so they are re-read while open.
     func start() {
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
@@ -62,32 +64,34 @@ final class SettingsModel {
         timer = nil
     }
 
+    /// Assigns only what changed, so an idle window does not redraw every second.
     func refresh() {
-        isPaused = actions.isPaused()
-        accessibilityGranted = Permissions.accessibility
-        loginEnabled = LoginItem.isEnabled
-        loginNeedsApproval = LoginItem.needsApproval
-        latency = actions.latency()
-        let displays = actions.displays()
-        if displays != self.displays { self.displays = displays }
-        let mouse = actions.mouseDisplay()
-        if mouse != mouseDisplay { mouseDisplay = mouse }
-        let recent = actions.recentApps().prefix(5)
-        if recent.map({ $0 }) != previewApps.map(\.id) {
+        func set<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<SettingsModel, Value>, _ value: Value) {
+            if self[keyPath: keyPath] != value { self[keyPath: keyPath] = value }
+        }
+        set(\.isPaused, actions.isPaused())
+        set(\.accessibilityGranted, actions.accessibilityGranted())
+        set(\.loginEnabled, LoginItem.isEnabled)
+        set(\.loginBlocked, LoginItem.isBlockedInLoginItems)
+        set(\.latency, actions.latency())
+        set(\.displays, actions.displays())
+        set(\.mouseDisplay, actions.mouseDisplay())
+        set(\.runningAppsToExclude, Self.runningApps(excluding: configStore.config.exclude))
+
+        let recent = Array(actions.recentApps().prefix(5))
+        if recent != previewApps.map(\.id) {
             previewApps = recent.compactMap { pid in
                 guard let app = NSRunningApplication(processIdentifier: pid), let icon = app.icon else { return nil }
                 return PreviewApp(id: pid, name: app.localizedName ?? "App", icon: icon)
             }
         }
-        if let screen = NSScreen.main, screen.maximumFramesPerSecond > 0 {
-            frameMilliseconds = 1000.0 / Double(screen.maximumFramesPerSecond)
-            displayName = screen.localizedName
+        let screen = NSScreen.screens.first { $0.displayId == mouseDisplay } ?? NSScreen.main
+        if let screen, screen.maximumFramesPerSecond > 0 {
+            set(\.frameMilliseconds, 1000.0 / Double(screen.maximumFramesPerSecond))
+            set(\.displayName, screen.localizedName)
         }
     }
 
-    // MARK: Bindings
-
-    /// A binding to one config value. Setting it applies at once and saves to the file.
     func binding<Value: Equatable>(_ keyPath: WritableKeyPath<Config, Value>) -> Binding<Value> {
         Binding(
             get: { self.configStore.config[keyPath: keyPath] },
@@ -108,21 +112,20 @@ final class SettingsModel {
     var startAtLogin: Binding<Bool> {
         Binding(
             get: { self.loginEnabled },
-            set: { enabled in self.setLoginEnabled(enabled) }
+            set: { enabled in
+                do {
+                    try LoginItem.setEnabled(enabled)
+                    self.loginError = nil
+                } catch {
+                    self.loginError = error.localizedDescription
+                }
+                self.refresh()
+            }
         )
     }
 
-    // MARK: Excluded apps
-
-    struct AppChoice {
-        var bundleId: String
-        var name: String
-        var icon: NSImage?
-    }
-
-    /// Running apps that are not excluded yet, by name.
-    var runningAppsToExclude: [AppChoice] {
-        let excluded = Set(configStore.config.exclude.map { $0.bundleId.lowercased() })
+    private static func runningApps(excluding exclusions: [Config.Exclusion]) -> [AppChoice] {
+        let excluded = Set(exclusions.map { $0.bundleId.lowercased() })
         let own = Bundle.main.bundleIdentifier?.lowercased()
         var seen = Set<String>()
         return NSWorkspace.shared.runningApplications
@@ -142,10 +145,12 @@ final class SettingsModel {
 
     func exclude(_ bundleId: String) {
         configStore.update { $0.addExclusions([.init(bundleId: bundleId)]) }
+        refresh()
     }
 
     func removeExclusion(_ bundleId: String) {
         configStore.update { $0.exclude.removeAll { $0.bundleId == bundleId } }
+        refresh()
     }
 
     func importAltTab() {
@@ -176,9 +181,8 @@ final class SettingsModel {
         guard panel.runModal() == .OK else { return }
         let rules = panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }.map { Config.Exclusion(bundleId: $0) }
         configStore.update { $0.addExclusions(rules) }
+        refresh()
     }
-
-    // MARK: Monitors
 
     static let groupColors: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .yellow, .red]
 
@@ -189,13 +193,12 @@ final class SettingsModel {
         return Self.groupColors[index % Self.groupColors.count]
     }
 
-    /// Group colors for the groups a display is in, in group order.
     func groupColors(of display: Display) -> [Color] {
         groups.filter { $0.members(in: displays).contains(display.id) }.map { color(ofGroup: $0.name) }
     }
 
-    /// The displays Cmd+Tab would list apps from right now. The focused window is taken to be
-    /// under the mouse, since Settings itself has focus while it is open.
+    /// What Cmd+Tab would list right now. Settings has focus while open, so the focused window is taken
+    /// to be under the mouse.
     var currentTargets: Set<UInt32>? {
         DisplayScope.targets(
             for: configStore.config.scope, groups: ResolvedGroups(groups, displays: displays),
@@ -207,6 +210,11 @@ final class SettingsModel {
         var options: [Config.Scope] = [.all, .mouseDisplay, .focusedDisplay, .mouseGroup] + groups.map { .group($0.name) }
         if !options.contains(configStore.config.scope) { options.append(configStore.config.scope) }
         return options
+    }
+
+    func displayNames(_ ids: Set<UInt32>, empty: String) -> String {
+        let names = displays.filter { ids.contains($0.id) }.map(\.name)
+        return names.isEmpty ? empty : names.formatted(.list(type: .and))
     }
 
     func saveGroup(_ group: DisplayGroup, replacing originalName: String?) {
@@ -232,44 +240,15 @@ final class SettingsModel {
         return (1...).lazy.map { $0 == 1 ? "New Group" : "New Group \($0)" }.first { !names.contains($0) }!
     }
 
-    // MARK: Actions
-
     func grantAccessibility() {
-        Permissions.requestAccessibility()
-        Permissions.openAccessibilitySettings()
-    }
-
-    func openLoginItemsSettings() {
-        LoginItem.openSettings()
+        Permissions.requestAccessibilityInSettings()
     }
 
     func resetAll() {
-        configStore.update { $0 = Config() }
+        configStore.resetToDefaults()
     }
 
     func openRepository() {
         if let url = URL(string: "https://github.com/infeace/InstantTab") { NSWorkspace.shared.open(url) }
-    }
-
-    func openConfigFile() {
-        configStore.flush()
-        NSWorkspace.shared.open(ConfigStore.fileURL)
-    }
-
-    func revealConfigFile() {
-        configStore.flush()
-        NSWorkspace.shared.activateFileViewerSelecting([ConfigStore.fileURL])
-    }
-
-    private func setLoginEnabled(_ enabled: Bool) {
-        do {
-            try LoginItem.setEnabled(enabled)
-            loginError = nil
-        } catch {
-            loginError = error.localizedDescription
-            Diagnostics.log.error("login item: \(error.localizedDescription, privacy: .public)")
-        }
-        refresh()
-        if loginNeedsApproval { LoginItem.openSettings() }
     }
 }

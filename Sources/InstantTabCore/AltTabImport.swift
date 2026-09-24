@@ -1,9 +1,8 @@
 import Foundation
 
-/// Reads AltTab's `exceptions` preference, a JSON list of per-app rules.
 public enum AltTabImport {
-    /// Only rules that hide an app from the switcher are imported. AltTab's `hide` is "1" for always and
-    /// "2" for when the app has no open window; `ignore` (shortcuts off in fullscreen) has no equivalent.
+    /// Reads AltTab's `exceptions` preference. Its `hide` is "1" for always and "2" for when the app has
+    /// no open window; `ignore` (shortcuts off in fullscreen) has no equivalent here.
     public static func exclusions(fromExceptionsJSON json: String) -> [Config.Exclusion] {
         guard let data = json.data(using: .utf8),
               let rules = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
@@ -20,7 +19,6 @@ public enum AltTabImport {
 }
 
 extension Config {
-    /// Adds rules for apps not already excluded, keeping existing rules as they are.
     public mutating func addExclusions(_ rules: [Exclusion]) {
         for rule in rules where !exclude.contains(where: { $0.bundleId.lowercased() == rule.bundleId.lowercased() }) {
             exclude.append(rule)

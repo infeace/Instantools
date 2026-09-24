@@ -1,18 +1,17 @@
 import AppKit
 import SwiftUI
 
-/// Creates the Settings window on open and releases it on close, so it costs nothing otherwise.
-/// While it is open InstantTab is a regular app, so the window can be reached with Cmd+Tab.
+/// Created on open and released on close. While open, InstantTab is a regular app so Cmd+Tab reaches it.
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let makeModel: () -> SettingsModel
-    private let onOpenChange: (Bool) -> Void
+    private let onOpenChange: () -> Void
     private var window: NSWindow?
     private var model: SettingsModel?
 
     var isOpen: Bool { window != nil }
 
-    init(makeModel: @escaping () -> SettingsModel, onOpenChange: @escaping (Bool) -> Void) {
+    init(makeModel: @escaping () -> SettingsModel, onOpenChange: @escaping () -> Void) {
         self.makeModel = makeModel
         self.onOpenChange = onOpenChange
     }
@@ -25,8 +24,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
             window.toolbarStyle = .unified
             window.titlebarAppearsTransparent = true
-            window.isReleasedWhenClosed = false
             window.titleVisibility = .hidden
+            window.isReleasedWhenClosed = false
             window.setContentSize(NSSize(width: 860, height: 640))
             window.contentMinSize = NSSize(width: 720, height: 480)
             window.setFrameAutosaveName("InstantTabSettings")
@@ -36,11 +35,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             self.window = window
             self.model = model
             NSApp.setActivationPolicy(.regular)
-            onOpenChange(true)
+            onOpenChange()
         }
         guard let window else { return }
         OwnWindow.bringForward(window)
-        // Right after becoming a regular app the first request can be dropped, so repeat it once.
+        // Right after becoming a regular app the first request can be dropped.
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
                 if !NSApp.isActive || !window.isKeyWindow { OwnWindow.bringForward(window) }
@@ -52,12 +51,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         model?.stop()
         model?.configStore.flush()
         model = nil
-        // Release the window after AppKit finishes closing it.
         DispatchQueue.main.async { [weak self] in
             MainActor.assumeIsolated {
                 self?.window = nil
                 NSApp.setActivationPolicy(.accessory)
-                self?.onOpenChange(false)
+                self?.onOpenChange()
             }
         }
     }

@@ -22,49 +22,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 latency: { [unowned self] in controller.latency },
                 displays: { [unowned self] in displays.displays },
                 mouseDisplay: { [unowned self] in displays.mouseDisplayId() },
-                recentApps: { [unowned self] in
-                    let own = ProcessInfo.processInfo.processIdentifier
-                    return tracker.snapshot.apps.map(\.pid).filter { $0 != own }
-                }
+                accessibilityGranted: { Permissions.accessibility },
+                recentApps: { [unowned self] in previewApps() }
             ))
         },
-        onOpenChange: { [unowned self] _ in tracker.reload() }
+        onOpenChange: { [unowned self] in tracker.reload() }
     )
-    /// Keeps App Nap from coalescing the show delay and release timers.
+    /// Keeps App Nap from stretching the show delay and release timers.
     private let activity = ProcessInfo.processInfo.beginActivity(
         options: .userInitiatedAllowingIdleSystemSleep, reason: "Cmd+Tab must respond instantly"
     )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NativeSwitcher.installExitHandlers()
-        // A hung app must never hold up focusing: every Accessibility call in this process gives up after 0.5s.
+        // A hung app must never hold up focusing.
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 0.5)
-        Diagnostics.log.notice("launched \(Self.version, privacy: .public), SkyLight focus available: \(SkyLight.canFocusWindows)")
-
-        configStore.onChange = { [weak self] config in self?.controller.config = config }
-        configStore.start()
-        controller.config = configStore.config
+        Diagnostics.log.notice("launched \(Bundle.main.shortVersion, privacy: .public), SkyLight focus available: \(SkyLight.canFocusWindows)")
 
         displays.start()
-        controller.resolveGroups()
+        displays.onChange = { [weak self] in
+            self?.controller.resolveGroups()
+            self?.tracker.refreshWindows()
+        }
+        configStore.onChange = { [weak self] config in self?.controller.config = config }
+        configStore.start()
         tracker.onChange = { [weak self] in
             guard let self else { return }
             icons.sync(with: tracker.snapshot.apps.map(\.pid))
             controller.modelChanged()
         }
-        displays.onChange = { [weak self] in
-            self?.controller.resolveGroups()
-            self?.tracker.refreshWindows()
-        }
         tracker.start()
-        icons.sync(with: tracker.snapshot.apps.map(\.pid))
 
         hotKeys.onPress = { [weak self] action, eventNanoseconds in
             self?.controller.hotKeyPressed(action, eventNanoseconds: eventNanoseconds)
         }
-        activate()
+        isPaused = !takeOver()
         startTaps()
         controller.warmUp()
+        LoginItem.repairIfMoved()
         NSApp.mainMenu = makeMainMenu()
         statusItem = makeStatusItem()
 
@@ -79,33 +74,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         configStore.flush()
     }
 
-    /// Reopening the app from Finder or Spotlight opens Settings.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         settings.show()
         return false
     }
 
-    // MARK: Takeover
-
-    /// Takes over Cmd+Tab only once the hotkeys are registered, so a failure never leaves the Mac without one.
-    private func activate() {
-        if hotKeys.register() {
-            NativeSwitcher.disable()
-        } else {
+    /// Native Cmd+Tab goes off only once the hotkeys are registered, so a failure never leaves the Mac
+    /// without one.
+    private func takeOver() -> Bool {
+        guard hotKeys.register() else {
             NativeSwitcher.restore()
             Diagnostics.log.error("could not register Cmd+Tab, native switcher left on")
+            return false
         }
-    }
-
-    private func deactivate() {
-        hotKeys.unregister()
-        NativeSwitcher.restore()
+        NativeSwitcher.disable()
+        return true
     }
 
     private func setPaused(_ paused: Bool) {
         guard paused != isPaused else { return }
-        isPaused = paused
-        paused ? deactivate() : activate()
+        if paused {
+            hotKeys.unregister()
+            NativeSwitcher.restore()
+            isPaused = true
+        } else {
+            isPaused = !takeOver()
+        }
     }
 
     private func startTaps() {
@@ -121,7 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controller.attach(taps)
         if Permissions.accessibility, taps.start() { return }
 
-        // Until Accessibility is granted, releases are caught by polling and Esc/arrows are unavailable.
+        // Until Accessibility is granted, releases are caught by polling and Esc and the arrows do nothing.
         Permissions.requestAccessibility()
         permissionPoll = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -133,11 +127,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    // MARK: Menu
+    private func previewApps() -> [Int32] {
+        let own = ProcessInfo.processInfo.processIdentifier
+        let snapshot = tracker.snapshot
+        let withWindows = Set(snapshot.windows.map(\.pid))
+        let exclusions = ExclusionMatcher(configStore.config.exclude)
+        return snapshot.apps
+            .filter { $0.pid != own && !exclusions.isExcluded(bundleId: $0.bundleId, hasWindows: withWindows.contains($0.pid)) }
+            .map(\.pid)
+    }
 
     private func makeStatusItem() -> NSStatusItem {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = NSImage(systemSymbolName: "rectangle.on.rectangle", accessibilityDescription: "InstantTab")
+        item.button?.image = MenuBarIcon.make()
         let menu = NSMenu()
         menu.delegate = self
         item.menu = menu
@@ -146,20 +148,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        menu.addItem(disabled("InstantTab \(Self.version)"))
+        let title = NSMenuItem(title: "InstantTab \(Bundle.main.shortVersion)", action: nil, keyEquivalent: "")
+        title.isEnabled = false
+        menu.addItem(title)
         if !Permissions.accessibility {
-            menu.addItem(action("Grant Accessibility…", #selector(openAccessibility)))
+            menu.addItem(item("Grant Accessibility…", #selector(openAccessibility), target: self))
         }
         if let error = configStore.error {
-            menu.addItem(action("Config error: \(error)", #selector(openSettings)))
+            menu.addItem(item("Config error: \(error)", #selector(openSettings), target: self))
         }
         menu.addItem(.separator())
-        menu.addItem(action("Settings…", #selector(openSettings), key: ","))
-        let pause = action("Pause (use native Cmd+Tab)", #selector(togglePause))
+        menu.addItem(item("Settings…", #selector(openSettings), ",", target: self))
+        let pause = item("Pause (use native Cmd+Tab)", #selector(togglePause), target: self)
         pause.state = isPaused ? .on : .off
         menu.addItem(pause)
         menu.addItem(.separator())
-        menu.addItem(action("Quit InstantTab", #selector(NSApplication.terminate(_:)), key: "q"))
+        menu.addItem(item("Quit InstantTab", #selector(NSApplication.terminate(_:)), "q"))
     }
 
     /// Only visible while Settings is open, when InstantTab is a regular app.
@@ -171,11 +175,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             item.submenu = menu
             main.addItem(item)
-        }
-        func item(_ title: String, _ selector: Selector, _ key: String = "", target: AnyObject? = nil) -> NSMenuItem {
-            let item = NSMenuItem(title: title, action: selector, keyEquivalent: key)
-            item.target = target
-            return item
         }
         submenu("InstantTab", [
             item("About InstantTab", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
@@ -201,21 +200,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return main
     }
 
-    private func disabled(_ title: String) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        return item
-    }
-
-    private func action(_ title: String, _ selector: Selector, key: String = "") -> NSMenuItem {
+    /// A nil target goes down the responder chain, which ends at NSApp.
+    private func item(_ title: String, _ selector: Selector, _ key: String = "", target: AnyObject? = nil) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: selector, keyEquivalent: key)
-        item.target = selector == #selector(NSApplication.terminate(_:)) ? NSApp : self
+        item.target = target
         return item
     }
 
     @objc private func openAccessibility() {
-        Permissions.requestAccessibility()
-        Permissions.openAccessibilitySettings()
+        Permissions.requestAccessibilityInSettings()
     }
 
     @objc private func openSettings() {
@@ -224,9 +217,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func togglePause() {
         setPaused(!isPaused)
-    }
-
-    private static var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
     }
 }

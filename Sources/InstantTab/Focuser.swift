@@ -3,10 +3,9 @@ import InstantTabCore
 import SkyLightShim
 import os
 
-/// Brings the chosen app or window forward off the main thread. A newer request supersedes an older one.
 final class Focuser: Sendable {
     private let queue = DispatchQueue(label: "com.infeace.InstantTab.focus", qos: .userInteractive)
-    /// Raising talks to the target app and can stall, so it runs apart from the next focus request.
+    /// Raising talks to the target app and can stall, so it never holds up the next focus.
     private let raiseQueue = DispatchQueue(label: "com.infeace.InstantTab.raise", qos: .userInteractive, attributes: .concurrent)
     private let generation = OSAllocatedUnfairLock(initialState: 0)
     private let ownPid = ProcessInfo.processInfo.processIdentifier
@@ -16,8 +15,8 @@ final class Focuser: Sendable {
             value += 1
             return value
         }
-        // Accessibility calls into this process run AppKit on the calling thread, which crashes off main.
-        // InstantTab's own windows (Settings) are brought forward with AppKit instead.
+        // Accessibility calls into this process run AppKit on the calling thread, which crashes off main,
+        // so InstantTab's own windows are brought forward with AppKit.
         guard entry.pid != ownPid else {
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { Self.focusOwnWindow(entry.windowId) }
@@ -41,8 +40,8 @@ final class Focuser: Sendable {
         guard isCurrent(token), let app = NSRunningApplication(processIdentifier: entry.pid) else { return }
         if app.isHidden { app.unhide() }
 
-        // No visible window (windowless, minimized, or only on another Space): activate like native,
-        // which also switches to the app's Space.
+        // No visible window (windowless, minimized, or on another Space): activate like native, which
+        // also switches to the app's Space.
         guard let windowId = entry.windowId else {
             if !app.activate(options: .activateAllWindows) { SkyLight.focus(pid: entry.pid, windowId: 0) }
             return
@@ -58,7 +57,7 @@ final class Focuser: Sendable {
         }
     }
 
-    /// Puts the window on top of its app's other windows. The front-process call alone does not reorder them.
+    /// The front-process call alone does not reorder an app's own windows.
     private func raise(_ windowId: UInt32, of pid: pid_t) {
         let app = AXUIElementCreateApplication(pid)
         var value: CFTypeRef?

@@ -4,7 +4,6 @@ import Testing
 struct LatencyStatsTests {
     @Test func emptyHasNoPercentile() {
         #expect(LatencyStats().percentile(50) == nil)
-        #expect(LatencyStats().summary == "no samples")
     }
 
     @Test func nearestRankPercentiles() {
@@ -26,10 +25,9 @@ struct LatencyStatsTests {
         #expect(stats.chronological == [2, 3, 4])
     }
 
-    @Test func summaryFormatsMilliseconds() {
-        var stats = LatencyStats(capacity: 2)
-        stats.record(12_340_000)
-        stats.record(20_060_000)
-        #expect(stats.summary == "p50 12.3ms p95 20.1ms (n=2)")
+    @Test func formatsMilliseconds() {
+        #expect(LatencyStats.milliseconds(12_340_000) == "12.3ms")
+        #expect(LatencyStats.milliseconds(20_060_000) == "20.1ms")
+        #expect(LatencyStats.milliseconds(0) == "0.0ms")
     }
 }

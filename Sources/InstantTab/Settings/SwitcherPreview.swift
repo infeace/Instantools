@@ -7,25 +7,22 @@ struct PreviewApp: Identifiable {
     let icon: NSImage
 }
 
-/// A faithful miniature of the real switcher on a small desktop: same colors, corner radius, highlight
-/// and proportions, scaled to fit. It follows the icon size setting live.
 struct SwitcherPreview: View {
     let apps: [PreviewApp]
     let iconSize: Double
     let isActive: Bool
     @Environment(\.colorScheme) private var colorScheme
 
-    // The real panel's metrics (SwitcherPanel.Metrics).
+    // SwitcherPanel.Metrics
     private let padding: CGFloat = 14
     private let inset: CGFloat = 10
     private let nameHeight: CGFloat = 26
 
-    /// Space at the bottom kept free for controls laid over the preview.
     var bottomInset: CGFloat = 0
 
     var body: some View {
         GeometryReader { geometry in
-            let shown = Array(apps.prefix(5))
+            let shown = apps
             let tile = CGFloat(iconSize) + 2 * inset
             let panelWidth = 2 * padding + CGFloat(max(shown.count, 1)) * tile
             let panelHeight = 2 * padding + tile + nameHeight
@@ -86,7 +83,6 @@ struct SwitcherPreview: View {
                         }
                 }
             }
-            // Centered under the selected tile, as the real panel places it.
             let rowWidth = CGFloat(shown.count) * tile
             Text(shown.indices.contains(selected) ? shown[selected].name : "")
                 .font(.system(size: 13, weight: .medium))
@@ -110,7 +106,6 @@ struct SwitcherPreview: View {
     }
 }
 
-/// Recent draw times as bars against one display frame.
 struct LatencyBars: View {
     let samples: [UInt64]
     let frameMilliseconds: Double
@@ -120,7 +115,6 @@ struct LatencyBars: View {
             let values = samples.suffix(40).map { Double($0) / 1_000_000 }
             let top = max(frameMilliseconds * 2.2, values.max() ?? 0)
             let slot = size.width / 40
-            // Newest on the right, so a few samples read as the latest ones.
             let first = 40 - values.count
             for (index, value) in values.enumerated() {
                 let height = max(2, size.height * value / top)

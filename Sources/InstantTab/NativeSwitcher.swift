@@ -2,8 +2,8 @@ import Dispatch
 import Darwin
 import SkyLightShim
 
-/// Turns native Cmd+Tab off while InstantTab handles it, and back on for every way the process can end.
-/// The setting outlives the process, so a missed restore would leave the Mac without Cmd+Tab.
+/// Native Cmd+Tab stays off only while InstantTab handles it. The setting outlives the process, so it is
+/// restored on every way out: normal exit, termination signals, and crashes.
 enum NativeSwitcher {
     static func disable() {
         for hotKey in SymbolicHotKey.allCases { SkyLight.setEnabled(false, hotKey) }
@@ -14,20 +14,12 @@ enum NativeSwitcher {
     }
 
     nonisolated(unsafe) private static var signalSources: [DispatchSourceSignal] = []
-    /// Runs on the main thread when a termination signal (such as a replacing copy's SIGTERM) arrives.
     nonisolated(unsafe) static var beforeSignalExit: (@MainActor () -> Void)?
 
-    /// Normal exits restore through `atexit`. Termination signals exit normally, and crash signals
-    /// restore on a best-effort basis and then re-raise so the crash is still reported. Crash handlers
-    /// run on their own stack so a main-thread stack overflow can still restore.
     static func installExitHandlers() {
         atexit { NativeSwitcher.restore() }
-        // Stopped with the hotkeys registered, Cmd+Tab would do nothing until resumed.
+        // A stopped process would keep the hotkeys registered and Cmd+Tab would do nothing.
         signal(SIGTSTP, SIG_IGN)
-
-        let stackSize = 64 * 1024
-        var stack = stack_t(ss_sp: malloc(stackSize), ss_size: stackSize, ss_flags: 0)
-        sigaltstack(&stack, nil)
 
         for sig in [SIGTERM, SIGINT, SIGHUP, SIGQUIT] {
             signal(sig, SIG_IGN)
@@ -40,6 +32,11 @@ enum NativeSwitcher {
             signalSources.append(source)
         }
 
+        // Crash handlers run on their own stack so a stack overflow can still restore, then re-raise so
+        // the crash is reported.
+        let stackSize = 64 * 1024
+        var stack = stack_t(ss_sp: malloc(stackSize), ss_size: stackSize, ss_flags: 0)
+        sigaltstack(&stack, nil)
         for sig in [SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGFPE, SIGTRAP] {
             var action = sigaction()
             action.__sigaction_u.__sa_handler = { sig in

@@ -1,9 +1,7 @@
 import AppKit
 import InstantTabCore
 
-/// The switcher window. Created once at launch and reused: showing it sets layer frames and contents
-/// inside one transaction with implicit animations off, then orders the panel in without activating
-/// InstantTab. No SwiftUI, blur or animation on this path.
+/// Created once and reused: showing it only sets layer frames and contents. No SwiftUI, blur or animation.
 @MainActor
 final class SwitcherPanel {
     private enum Metrics {
@@ -13,6 +11,7 @@ final class SwitcherPanel {
         static let screenMargin: CGFloat = 40
     }
 
+    private let icons: IconCache
     private let panel: NSPanel
     private let root = CALayer()
     private let background = CALayer()
@@ -23,12 +22,12 @@ final class SwitcherPanel {
     private var tileInset: CGFloat = 0
     private var panelWidth: CGFloat = 0
     private var entries: [SwitcherEntry] = []
-    private(set) var isVisible = false
+    private var isVisible = false
 
-    /// Called once per show with the view that just went on screen, to measure time to first frame.
     var onShown: ((NSView) -> Void)?
 
-    init() {
+    init(icons: IconCache) {
+        self.icons = icons
         panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = .popUpMenu
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
@@ -58,11 +57,11 @@ final class SwitcherPanel {
         root.addSublayer(nameLayer)
     }
 
-    /// Orders the panel in once, invisibly, so the first real show does not pay for backing store setup.
-    func warmUp(entries: [SwitcherEntry], icons: IconCache, on screen: NSScreen?, iconSize: CGFloat) {
+    /// Orders the panel in once, invisibly, so the first real show skips backing store setup.
+    func warmUp(entries: [SwitcherEntry], on screen: NSScreen?, iconSize: CGFloat) {
         guard let screen, !entries.isEmpty else { return }
         panel.alphaValue = 0
-        layout(entries: entries, selected: 0, icons: icons, on: screen, iconSize: iconSize)
+        layout(entries: entries, selected: 0, on: screen, iconSize: iconSize)
         panel.orderFrontRegardless()
         panel.displayIfNeeded()
         CATransaction.flush()
@@ -70,17 +69,16 @@ final class SwitcherPanel {
         panel.alphaValue = 1
     }
 
-    func show(entries: [SwitcherEntry], selected: Int, icons: IconCache, on screen: NSScreen, iconSize: CGFloat) {
-        layout(entries: entries, selected: selected, icons: icons, on: screen, iconSize: iconSize)
+    func show(entries: [SwitcherEntry], selected: Int, on screen: NSScreen, iconSize: CGFloat) {
+        layout(entries: entries, selected: selected, on: screen, iconSize: iconSize)
         panel.orderFrontRegardless()
         isVisible = true
         if let view = panel.contentView { onShown?(view) }
     }
 
-    /// Re-lays out a visible panel after the entries changed underneath it.
-    func update(entries: [SwitcherEntry], selected: Int, icons: IconCache, on screen: NSScreen, iconSize: CGFloat) {
+    func update(entries: [SwitcherEntry], selected: Int, on screen: NSScreen, iconSize: CGFloat) {
         guard isVisible else { return }
-        layout(entries: entries, selected: selected, icons: icons, on: screen, iconSize: iconSize)
+        layout(entries: entries, selected: selected, on: screen, iconSize: iconSize)
     }
 
     func select(_ index: Int) {
@@ -97,7 +95,7 @@ final class SwitcherPanel {
         isVisible = false
     }
 
-    private func layout(entries: [SwitcherEntry], selected: Int, icons: IconCache, on screen: NSScreen, iconSize: CGFloat) {
+    private func layout(entries: [SwitcherEntry], selected: Int, on screen: NSScreen, iconSize: CGFloat) {
         self.entries = entries
         let count = CGFloat(entries.count)
         let available = screen.visibleFrame.width - 2 * Metrics.screenMargin - 2 * Metrics.padding
@@ -109,10 +107,10 @@ final class SwitcherPanel {
             width: 2 * Metrics.padding + count * tileSize,
             height: 2 * Metrics.padding + tileSize + Metrics.nameHeight
         )
-        let origin = CGPoint(x: screen.frame.midX - size.width / 2, y: screen.frame.midY - size.height / 2)
+        let origin = CGPoint(x: (screen.frame.midX - size.width / 2).rounded(), y: (screen.frame.midY - size.height / 2).rounded())
         let sizeChanged = panel.frame.size != size
         panelWidth = size.width
-        panel.setFrame(CGRect(origin: origin, size: size).integral, display: false)
+        panel.setFrame(CGRect(origin: origin, size: size), display: false)
 
         let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let scale = screen.backingScaleFactor

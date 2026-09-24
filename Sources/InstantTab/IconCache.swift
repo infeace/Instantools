@@ -1,10 +1,8 @@
 import AppKit
 import UniformTypeIdentifiers
 
-/// App icons pre-rendered to bitmaps when apps appear, so showing the switcher only assigns layer contents.
 @MainActor
 final class IconCache {
-    /// Large enough for a 128pt icon on a 2x display. Layers scale it down with trilinear filtering.
     private static let pixels = 256
     private var icons: [Int32: CGImage] = [:]
     private lazy var placeholder = Self.render(NSWorkspace.shared.icon(for: .applicationBundle))
@@ -17,7 +15,6 @@ final class IconCache {
         return icon
     }
 
-    /// Renders icons for new pids and forgets pids that are gone.
     func sync(with pids: [Int32]) {
         let live = Set(pids)
         icons = icons.filter { live.contains($0.key) }

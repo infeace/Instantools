@@ -1,9 +1,7 @@
 import AppKit
 import InstantTabCore
 
-/// Keeps the snapshot fresh so the key press never queries anything. App order comes from workspace
-/// activation notifications. Visible windows come from one CGWindowList call, run off the main thread
-/// whenever something that moves windows happens and at the start of each switcher session.
+/// Keeps the snapshot fresh so the key press never queries anything.
 @MainActor
 final class WindowTracker {
     private(set) var snapshot = Snapshot()
@@ -31,10 +29,7 @@ final class WindowTracker {
 
         appsObservation = NSWorkspace.shared.observe(\.runningApplications) { [weak self] _, _ in
             DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    self?.reloadApps()
-                    self?.refreshWindows()
-                }
+                MainActor.assumeIsolated { self?.reload() }
             }
         }
 
@@ -55,28 +50,23 @@ final class WindowTracker {
             NSWorkspace.activeSpaceDidChangeNotification,
         ] {
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.reloadApps()
-                    self?.refreshWindows()
-                }
+                MainActor.assumeIsolated { self?.reload() }
             }
         }
     }
 
-    /// Re-reads apps and windows, for changes the workspace does not announce (such as activation policy).
     func reload() {
         reloadApps()
         refreshWindows()
     }
 
-    /// Moves an app to the front of the order as soon as it is chosen, so a quick second Cmd+Tab
-    /// toggles back even before macOS reports the activation.
+    /// Reorders as soon as an app is chosen, so a quick second Cmd+Tab toggles back even before macOS
+    /// reports the activation.
     func noteChosen(_ pid: Int32) {
         mru.touch(pid)
         publish()
     }
 
-    /// Re-reads visible windows in the background. Calls made while one is running coalesce into one more.
     func refreshWindows() {
         guard !refreshInFlight else {
             refreshPending = true
@@ -108,8 +98,7 @@ final class WindowTracker {
             let pid = app.processIdentifier
             apps[pid] = RunningApp(
                 pid: pid, bundleId: app.bundleIdentifier,
-                name: app.localizedName ?? app.bundleURL?.deletingPathExtension().lastPathComponent ?? "App",
-                isHidden: app.isHidden
+                name: app.localizedName ?? app.bundleURL?.deletingPathExtension().lastPathComponent ?? "App"
             )
             live.append(pid)
         }
@@ -119,7 +108,6 @@ final class WindowTracker {
         publish()
     }
 
-    /// Initial order before any activation was seen: frontmost app, then by window stacking, then newest launched.
     private func seedOrder() {
         var order: [Int32] = []
         if let front = NSWorkspace.shared.frontmostApplication?.processIdentifier { order.append(front) }
@@ -146,8 +134,7 @@ final class WindowTracker {
         onChange?()
     }
 
-    /// On-screen, normal-level windows front to back. About 1ms; never called on the key press path.
-    /// The switcher panel is above normal level, so it never lists itself.
+    /// On-screen, normal-level windows front to back (the panel is above normal level). About 1ms.
     nonisolated private static func queryWindows() -> [WindowRecord] {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]] else { return [] }

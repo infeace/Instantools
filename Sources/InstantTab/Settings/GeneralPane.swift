@@ -8,19 +8,20 @@ struct GeneralPane: View {
     var body: some View {
         PaneScroll { compact in
             PaneHeader(pane: .general, subtitle: "How InstantTab takes over Cmd+Tab and how the switcher looks.")
+            FileProblemBanner(configStore: model.configStore)
             hero(compact: compact)
             if !model.accessibilityGranted { permissionCard(compact: compact) }
             speed(compact: compact)
-            switcher
-            startup
+            Group {
+                switcher
+                startup
+            }
+            .disabled(model.configStore.fileIsBroken)
             configuration
         }
         .navigationTitle("General")
     }
 
-    // MARK: Sections
-
-    /// The live preview, with the main switch on a glass bar floating over it.
     private func hero(compact: Bool) -> some View {
         SwitcherPreview(
             apps: model.previewApps,
@@ -60,25 +61,22 @@ struct GeneralPane: View {
     }
 
     private func permissionCard(compact: Bool) -> some View {
-        let text = VStack(alignment: .leading, spacing: 2) {
-            Text("Allow Accessibility access")
-                .font(.headline)
-            Text("Cmd+Tab already works. With access, Esc cancels, the arrow keys move, and the right window of an app comes forward.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        let button = Button("Allow…") { model.grantAccessibility() }
-            .glassButton(prominent: true)
-            .controlSize(.large)
+        let layout = adaptiveLayout(compact: compact, spacing: 12)
         return HStack(alignment: compact ? .top : .center, spacing: 14) {
             IconTile(symbol: "hand.raised.fill", colors: [.orange, Color(red: 0.93, green: 0.42, blue: 0.1)], size: 34)
-            if compact {
-                VStack(alignment: .leading, spacing: 10) { text; button }
-            } else {
-                text
-                Spacer(minLength: 12)
-                button
+            layout {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Allow Accessibility access")
+                        .font(.headline)
+                    Text("Cmd+Tab already works. With access, Esc cancels, the arrow keys move, and the right window of an app comes forward.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !compact { Spacer(minLength: 0) }
+                Button("Allow…") { model.grantAccessibility() }
+                    .glassButton(prominent: true)
+                    .controlSize(.large)
             }
         }
         .padding(16)
@@ -88,22 +86,18 @@ struct GeneralPane: View {
     }
 
     private func speed(compact: Bool) -> some View {
-        SettingsCard(
+        let layout = adaptiveLayout(compact: compact, spacing: 18)
+        return SettingsCard(
             title: "Speed",
             footer: "Time from pressing Tab to the switcher on screen, after the show delay. One frame on \(model.displayName) is \(String(format: "%.1f", model.frameMilliseconds))ms, the fastest any app can appear."
         ) {
-            Group {
-                if compact {
-                    VStack(alignment: .leading, spacing: 12) {
-                        speedStat
-                        speedChart.frame(maxWidth: .infinity)
-                    }
-                } else {
-                    HStack(alignment: .center, spacing: 18) {
-                        speedStat
-                        Spacer(minLength: 8)
-                        speedChart.frame(width: 220)
-                    }
+            layout {
+                speedStat
+                if !compact { Spacer(minLength: 8) }
+                if model.latency.count > 0 {
+                    LatencyBars(samples: model.latency.chronological, frameMilliseconds: model.frameMilliseconds)
+                        .frame(height: 46)
+                        .frame(maxWidth: compact ? .infinity : 220)
                 }
             }
             .padding(16)
@@ -119,7 +113,7 @@ struct GeneralPane: View {
                         .monospacedDigit()
                     verdict(for: typical)
                 }
-                Text(slowestText)
+                Text(spreadText)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -131,13 +125,6 @@ struct GeneralPane: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-        }
-    }
-
-    @ViewBuilder private var speedChart: some View {
-        if model.latency.count > 0 {
-            LatencyBars(samples: model.latency.chronological, frameMilliseconds: model.frameMilliseconds)
-                .frame(height: 46)
         }
     }
 
@@ -171,19 +158,16 @@ struct GeneralPane: View {
                     .toggleStyle(.switch)
                     .labelsHidden()
             }
-            if model.loginNeedsApproval {
+            if model.loginBlocked {
                 RowDivider()
-                SettingsRow(title: "Waiting for your approval", subtitle: "macOS asks you to allow InstantTab in Login Items.") {
-                    Button("Open Login Items") { model.openLoginItemsSettings() }
+                SettingsRow(title: "Turned off in Login Items", subtitle: "macOS will not start InstantTab until you allow it again.") {
+                    Button("Open Login Items") { LoginItem.openLoginItemsSettings() }
                         .glassButton()
                 }
             }
             if let error = model.loginError {
                 RowDivider()
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
-                    .padding(14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                MessageRow(text: error)
             }
         }
     }
@@ -192,24 +176,18 @@ struct GeneralPane: View {
         SettingsCard(title: "Configuration") {
             SettingsRow(title: "Settings file", subtitle: "~/.config/instanttab/config.json5, kept in sync with this window.") {
                 HStack(spacing: 8) {
-                    Button("Show in Finder") { model.revealConfigFile() }
-                    Button("Open") { model.openConfigFile() }
+                    Button("Show in Finder") { model.configStore.revealInFinder() }
+                    Button("Open") { model.configStore.openInEditor() }
                 }
                 .glassButton()
             }
-            if let error = model.configStore.error {
+            if let error = model.configStore.error, !model.configStore.fileIsBroken {
                 RowDivider()
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
-                    .padding(14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                MessageRow(text: error)
             }
             ForEach(model.configStore.warnings, id: \.self) { warning in
                 RowDivider()
-                Label(warning, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange)
-                    .padding(14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                MessageRow(text: warning, isError: false)
             }
             RowDivider()
             SettingsRow(title: "Reset all settings", subtitle: "Back to defaults, including excluded apps and monitor groups.") {
@@ -224,22 +202,25 @@ struct GeneralPane: View {
         }
     }
 
-    // MARK: Helpers
-
     private var showDelay: Binding<Double> {
         let delay = model.binding(\.showDelayMs)
         return Binding(get: { Double(delay.wrappedValue) }, set: { delay.wrappedValue = Int($0) })
     }
 
-    private var slowestText: String {
+    /// With few samples the 95th percentile is just the slowest one, so it is called that.
+    private var spreadText: String {
+        let count = model.latency.count
         guard let slow = model.latency.percentile(95) else { return "" }
-        return "Typical. 95% of \(model.latency.count) switches under \(LatencyStats.milliseconds(slow))."
+        let switches = count == 1 ? "1 switch" : "\(count) switches"
+        return count < 20
+            ? "Typical. Slowest of \(switches): \(LatencyStats.milliseconds(slow))."
+            : "Typical. 95% of \(switches) under \(LatencyStats.milliseconds(slow))."
     }
 
     private func verdict(for nanoseconds: UInt64) -> some View {
         let frames = Double(nanoseconds) / 1_000_000 / model.frameMilliseconds
         let (text, color): (String, Color) = frames <= 1 ? ("Within 1 frame", .green)
-            : frames <= 2 ? ("Within 2 frames", .yellow) : ("Slower than 2 frames", .orange)
+            : frames <= 2 ? ("Within 2 frames", .orange) : ("Slower than 2 frames", .red)
         return Text(text)
             .font(.caption.weight(.semibold))
             .foregroundStyle(color)

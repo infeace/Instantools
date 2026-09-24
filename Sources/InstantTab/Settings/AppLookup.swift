@@ -1,6 +1,5 @@
 import AppKit
 
-/// Names and icons for bundle ids, for rows that refer to apps that may not be running.
 @MainActor
 final class AppLookup {
     struct Info {
@@ -39,7 +38,6 @@ final class AppLookup {
             ?? url.deletingPathExtension().lastPathComponent
     }
 
-    /// A copy sized for a menu row.
     static func menuIcon(_ image: NSImage?) -> NSImage? {
         guard let copy = image?.copy() as? NSImage else { return nil }
         copy.size = NSSize(width: 16, height: 16)

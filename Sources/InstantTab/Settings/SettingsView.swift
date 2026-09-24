@@ -70,6 +70,7 @@ struct SettingsView: View {
             case .about: AboutPane(model: model)
             }
         }
+        .toolbar(removing: .sidebarToggle)
         .modernToolbar()
     }
 
@@ -77,13 +78,12 @@ struct SettingsView: View {
         Label {
             Text(pane.title)
         } icon: {
-            PaneIcon(pane: pane, size: 20)
+            PaneIcon(pane: pane)
         }
         .tag(pane)
     }
 }
 
-/// App name and whether InstantTab is handling Cmd+Tab right now.
 private struct SidebarHeader: View {
     let model: SettingsModel
 
@@ -111,7 +111,6 @@ private struct SidebarHeader: View {
     }
 }
 
-/// A slider with its current value shown to the right.
 struct ValueSlider: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
@@ -120,7 +119,7 @@ struct ValueSlider: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Rounded here rather than with `step:`, which draws a tick mark per step.
+            // Rounded here because `step:` draws a tick mark per step.
             Slider(value: Binding(get: { value }, set: { value = ($0 / step).rounded() * step }), in: range)
                 .frame(minWidth: 150, maxWidth: 210)
             Text(verbatim: "\(Int(value)) \(unit)")

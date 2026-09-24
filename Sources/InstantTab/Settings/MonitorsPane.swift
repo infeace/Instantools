@@ -7,59 +7,63 @@ struct MonitorsPane: View {
 
     var body: some View {
         Form {
-            Section {
-                DisplayArrangement(model: model)
-                    .frame(height: 210)
-            } header: {
-                Text("Your monitors")
-            } footer: {
-                Text("Highlighted monitors are the ones Cmd+Tab lists apps from right now. The pointer marks the monitor under the mouse.")
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Show apps from") {
-                Picker("Show apps from", selection: model.binding(\.scope)) {
-                    ForEach(model.scopeOptions, id: \.self) { scope in
-                        Text(scope.title(groupExists: model.groups.contains { $0.name == scope.groupName })).tag(scope)
-                    }
-                }
-                .pickerStyle(.radioGroup)
-                .labelsHidden()
-                LabeledContent {
-                    Text(currentTargetNames)
+            FileProblemSection(configStore: model.configStore)
+            Group {
+                Section {
+                    DisplayArrangement(model: model)
+                        .frame(height: 210)
+                } header: {
+                    Text("Your monitors")
+                } footer: {
+                    Text("Highlighted monitors are the ones Cmd+Tab lists apps from right now. The pointer marks the monitor under the mouse.")
                         .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    Text("Right now")
-                    Text(model.configStore.config.scope.explanation)
                 }
-            }
 
-            Section {
-                if model.groups.isEmpty {
-                    Text("No groups yet. A group combines monitors, for example every external one, and keeps working when you swap monitors because it matches by kind, shape or position.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(model.groups, id: \.name) { group in
-                        GroupRow(
-                            group: group,
-                            color: model.color(ofGroup: group.name),
-                            members: memberNames(group),
-                            edit: { editing = GroupDraft(group: group, originalName: group.name) },
-                            delete: { model.deleteGroup(group.name) }
-                        )
+                Section("Show apps from") {
+                    Picker("Show apps from", selection: model.binding(\.scope)) {
+                        ForEach(model.scopeOptions, id: \.self) { scope in
+                            Text(scope.title(groupExists: model.groups.contains { $0.name == scope.groupName })).tag(scope)
+                        }
+                    }
+                    .pickerStyle(.radioGroup)
+                    .labelsHidden()
+                    LabeledContent {
+                        Text(currentTargetNames)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.trailing)
+                    } label: {
+                        Text("Right now")
+                        Text(model.configStore.config.scope.explanation)
                     }
                 }
-            } header: {
-                Text("Monitor groups")
-            } footer: {
-                HStack {
-                    Button("New Group…") {
-                        editing = GroupDraft(group: DisplayGroup(name: model.newGroupName(), rules: []), originalName: nil)
+
+                Section {
+                    if model.groups.isEmpty {
+                        Text("No groups yet. A group combines monitors, for example every external one, and keeps working when you swap monitors because it matches by kind, shape or position.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(model.groups, id: \.name) { group in
+                            GroupRow(
+                                group: group,
+                                color: model.color(ofGroup: group.name),
+                                members: memberNames(group),
+                                edit: { editing = GroupDraft(group: group, originalName: group.name) },
+                                delete: { model.deleteGroup(group.name) }
+                            )
+                        }
                     }
-                    Spacer()
+                } header: {
+                    Text("Monitor groups")
+                } footer: {
+                    HStack {
+                        Button("New Group…") {
+                            editing = GroupDraft(group: DisplayGroup(name: model.newGroupName(), rules: []), originalName: nil)
+                        }
+                        Spacer()
+                    }
                 }
             }
+            .disabled(model.configStore.fileIsBroken)
         }
         .formStyle(.grouped)
         .navigationTitle("Monitors")
@@ -75,20 +79,14 @@ struct MonitorsPane: View {
 
     private var currentTargetNames: String {
         guard let targets = model.currentTargets else { return "All monitors" }
-        let names = model.displays.filter { targets.contains($0.id) }.map(\.name)
-        return names.isEmpty ? "All monitors" : names.formatted(.list(type: .and))
+        return model.displayNames(targets, empty: "All monitors")
     }
 
     private func memberNames(_ group: DisplayGroup) -> String {
-        let members = group.members(in: model.displays)
-        let names = model.displays.filter { members.contains($0.id) }.map(\.name)
-        return names.isEmpty ? "No monitor connected" : names.formatted(.list(type: .and))
+        model.displayNames(group.members(in: model.displays), empty: "No monitor connected")
     }
 }
 
-// MARK: Arrangement
-
-/// The connected monitors drawn to scale, as in System Settings > Displays.
 private struct DisplayArrangement: View {
     let model: SettingsModel
 
@@ -191,8 +189,6 @@ private struct Badge: View {
     }
 }
 
-// MARK: Groups
-
 private struct GroupRow: View {
     let group: DisplayGroup
     let color: Color
@@ -205,7 +201,7 @@ private struct GroupRow: View {
             Circle().fill(color).frame(width: 10, height: 10)
             VStack(alignment: .leading, spacing: 1) {
                 Text(group.name)
-                Text(group.rules.isEmpty ? "No rules yet" : "Matches \(group.rules.map(\.title).formatted(.list(type: .or)))")
+                Text(group.rules.isEmpty ? "No rules yet" : "Matches \(DisplayRule.summary(of: group.rules))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text("Now: \(members)")
@@ -289,7 +285,7 @@ struct GroupEditor: View {
                             }
                         }
                     }
-                    LabeledContent("Name") {
+                    LabeledContent("Name matches") {
                         TextField("Name matches", text: $namePatterns, prompt: Text("DELL*, LG*"))
                             .labelsHidden()
                             .frame(maxWidth: 200)
@@ -301,7 +297,7 @@ struct GroupEditor: View {
                         .foregroundStyle(.secondary)
                 }
                 Section {
-                    ForEach(displays, id: \.id) { display in
+                    ForEach(displays.filter { !$0.uuid.isEmpty }, id: \.id) { display in
                         check(display.name, .uuid(display.uuid))
                     }
                     ForEach(disconnectedUUIDs, id: \.self) { uuid in
@@ -344,7 +340,6 @@ struct GroupEditor: View {
         return nil
     }
 
-    /// The rules in a stable order: descriptions first, then specific monitors, then names.
     private var finished: DisplayGroup {
         let patterns = namePatterns.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         let keywords = DisplayRule.keywords.filter(group.rules.contains)
@@ -356,6 +351,12 @@ struct GroupEditor: View {
         let members = finished.members(in: displays)
         let names = displays.filter { members.contains($0.id) }.map(\.name)
         return names.isEmpty ? "No connected monitor" : names.formatted(.list(type: .and))
+    }
+
+    /// Uuids compare case-insensitively, as the matcher does.
+    private func sameRule(_ lhs: DisplayRule, _ rhs: DisplayRule) -> Bool {
+        if case .uuid(let a) = lhs, case .uuid(let b) = rhs { return a.caseInsensitiveCompare(b) == .orderedSame }
+        return lhs == rhs
     }
 
     private var disconnectedUUIDs: [String] {
@@ -371,19 +372,17 @@ struct GroupEditor: View {
 
     private func rule(_ rule: DisplayRule) -> Binding<Bool> {
         Binding(
-            get: { group.rules.contains(rule) },
+            get: { group.rules.contains { sameRule($0, rule) } },
             set: { on in
                 if on {
-                    if !group.rules.contains(rule) { group.rules.append(rule) }
+                    if !group.rules.contains(where: { sameRule($0, rule) }) { group.rules.append(rule) }
                 } else {
-                    group.rules.removeAll { $0 == rule }
+                    group.rules.removeAll { sameRule($0, rule) }
                 }
             }
         )
     }
 }
-
-// MARK: Labels
 
 extension Config.Scope {
     var groupName: String? {
@@ -412,19 +411,24 @@ extension Config.Scope {
 }
 
 extension DisplayRule {
-    var title: String {
-        switch self {
-        case .builtIn: "built-in"
-        case .external: "external"
-        case .landscape: "landscape"
-        case .portrait: "portrait"
-        case .main: "main"
-        case .leftmost: "leftmost"
-        case .rightmost: "rightmost"
-        case .topmost: "topmost"
-        case .bottommost: "bottommost"
-        case .name(let pattern): "named \(pattern)"
-        case .uuid: "one specific monitor"
+    static func summary(of rules: [DisplayRule]) -> String {
+        var parts: [String] = rules.compactMap { rule in
+            switch rule {
+            case .builtIn: "built-in"
+            case .external: "external"
+            case .landscape: "landscape"
+            case .portrait: "portrait"
+            case .main: "main"
+            case .leftmost: "leftmost"
+            case .rightmost: "rightmost"
+            case .topmost: "topmost"
+            case .bottommost: "bottommost"
+            case .name(let pattern): "named \(pattern)"
+            case .uuid: nil
+            }
         }
+        let specific = rules.filter { if case .uuid = $0 { true } else { false } }.count
+        if specific > 0 { parts.append(specific == 1 ? "one specific monitor" : "\(specific) specific monitors") }
+        return parts.formatted(.list(type: .or))
     }
 }

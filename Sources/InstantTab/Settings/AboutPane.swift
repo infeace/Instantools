@@ -12,7 +12,7 @@ struct AboutPane: View {
                     .shadow(color: .black.opacity(0.2), radius: 12, y: 6)
                 Text("InstantTab")
                     .font(.largeTitle.weight(.semibold))
-                Text("Version \(model.version) (\(model.build))")
+                Text("Version \(Bundle.main.shortVersion) (\(Bundle.main.buildNumber))")
                     .foregroundStyle(.secondary)
                 Text("Cmd+Tab that appears the moment you press it, with the control macOS leaves out.")
                     .multilineTextAlignment(.center)
@@ -25,7 +25,7 @@ struct AboutPane: View {
                         Label("View on GitHub", systemImage: "arrow.up.right.square")
                     }
                     Button {
-                        model.revealConfigFile()
+                        model.configStore.revealInFinder()
                     } label: {
                         Label("Settings File", systemImage: "doc.text")
                     }

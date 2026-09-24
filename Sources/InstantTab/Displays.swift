@@ -1,8 +1,6 @@
 import AppKit
 import InstantTabCore
 
-/// The connected displays, refreshed when the arrangement changes. Nothing here is tied to a
-/// specific setup: displays are re-read on every connect, disconnect or rearrangement.
 @MainActor
 final class Displays {
     private(set) var displays: [Display] = []
@@ -25,7 +23,7 @@ final class Displays {
         var list: [Display] = []
         var byId: [UInt32: NSScreen] = [:]
         for screen in NSScreen.screens {
-            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { continue }
+            guard let id = screen.displayId else { continue }
             list.append(Display(
                 id: id, frame: CGDisplayBounds(id), uuid: Self.uuid(of: id), name: screen.localizedName,
                 isBuiltIn: CGDisplayIsBuiltin(id) != 0, isMain: CGDisplayIsMain(id) != 0
@@ -41,14 +39,19 @@ final class Displays {
         return CFUUIDCreateString(nil, uuid) as String
     }
 
-    /// The display under the mouse pointer.
     func mouseDisplayId() -> UInt32? {
         let location = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(location, $0.frame, false) }
-        return screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+        return screen?.displayId
     }
 
     func screen(for id: UInt32?) -> NSScreen? {
         id.flatMap { screensById[$0] } ?? NSScreen.main ?? NSScreen.screens.first
+    }
+}
+
+extension NSScreen {
+    var displayId: CGDirectDisplayID? {
+        deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
     }
 }

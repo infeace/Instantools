@@ -2,17 +2,15 @@ import CoreGraphics
 import Foundation
 import os
 
-/// Keys the switcher handles while it is open, besides Tab.
 enum SessionKey: Sendable {
     case cancel
     case previous
     case next
 }
 
-/// Event taps on a dedicated thread, so a busy main thread never delays reading the keyboard.
-/// The modifier tap is listen-only and always on. The session tap swallows keys, so it is only
-/// enabled while the switcher is open (an always-on filtering tap can break input methods). It sits
-/// at the HID level so it sees Cmd+Esc before system shortcuts such as Game Overlay do.
+/// On their own thread so a busy main thread never delays the keyboard. The session tap swallows keys, so
+/// it is on only while the switcher is open (always on, it breaks input methods), and sits at the HID
+/// level to see Cmd+Esc before Game Overlay does.
 final class InputTaps: @unchecked Sendable {
     private let onCommandReleased: @Sendable () -> Void
     private let onSessionKey: @Sendable (SessionKey) -> Void
@@ -25,9 +23,7 @@ final class InputTaps: @unchecked Sendable {
         self.onSessionKey = onSessionKey
     }
 
-    var hasModifierTap: Bool { modifierTap != nil }
-
-    /// Creates the taps on their own thread. Returns false when macOS refused (no permission yet).
+    /// False until macOS allows both taps, so callers can retry once Accessibility is granted.
     func start() -> Bool {
         guard modifierTap == nil else { return true }
         let ready = DispatchSemaphore(value: 0)
@@ -51,7 +47,7 @@ final class InputTaps: @unchecked Sendable {
 
     private func createTaps() {
         let userInfo = Unmanaged.passUnretained(self).toOpaque()
-        modifierTap = CGEvent.tapCreate(
+        let modifier = CGEvent.tapCreate(
             tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly,
             eventsOfInterest: CGEventMask(1 << CGEventType.flagsChanged.rawValue),
             callback: { _, type, event, userInfo in
@@ -61,7 +57,7 @@ final class InputTaps: @unchecked Sendable {
             },
             userInfo: userInfo
         )
-        sessionTap = CGEvent.tapCreate(
+        let session = CGEvent.tapCreate(
             tap: .cghidEventTap, place: .headInsertEventTap, options: .defaultTap,
             eventsOfInterest: CGEventMask(1 << CGEventType.keyDown.rawValue),
             callback: { _, type, event, userInfo in
@@ -71,18 +67,17 @@ final class InputTaps: @unchecked Sendable {
             },
             userInfo: userInfo
         )
-        if modifierTap == nil, let sessionTap {
-            CFMachPortInvalidate(sessionTap)
-            self.sessionTap = nil
+        guard let modifier, let session else {
+            [modifier, session].compactMap { $0 }.forEach(CFMachPortInvalidate)
+            return
         }
-        for tap in [modifierTap, sessionTap].compactMap({ $0 }) {
-            let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
-            CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
+        for tap in [modifier, session] {
+            CFRunLoopAddSource(CFRunLoopGetCurrent(), CFMachPortCreateRunLoopSource(nil, tap, 0), .commonModes)
         }
-        if let sessionTap { CGEvent.tapEnable(tap: sessionTap, enable: false) }
+        CGEvent.tapEnable(tap: session, enable: false)
+        modifierTap = modifier
+        sessionTap = session
     }
-
-    // Tap callbacks: integer compares and a queued handoff only, never IPC.
 
     private func handleModifier(_ type: CGEventType, _ event: CGEvent) {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
@@ -100,15 +95,15 @@ final class InputTaps: @unchecked Sendable {
         }
         guard type == .keyDown, event.flags.contains(.maskCommand), sessionActive.withLock({ $0 }) else { return false }
         let keycode = event.getIntegerValueField(.keyboardEventKeycode)
-        guard keycode != 48 else { return false } // Tab belongs to the Carbon hotkeys
+        guard keycode != 48 else { return false } // Tab belongs to the Carbon hotkeys.
         let key: SessionKey? = switch keycode {
-        case 53: .cancel // Escape
-        case 123: .previous // Left arrow
-        case 124: .next // Right arrow
+        case 53: .cancel
+        case 123: .previous
+        case 124: .next
         default: nil
         }
-        // Every other Cmd+key is swallowed too: the previous app is still key, and Cmd+Q or Cmd+W
-        // would otherwise reach it while the switcher is open.
+        // Every other Cmd+key is swallowed too: the previous app is still key, and Cmd+Q or Cmd+W would
+        // otherwise reach it while the switcher is open.
         if let key { onSessionKey(key) }
         return true
     }

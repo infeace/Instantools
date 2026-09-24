@@ -1,22 +1,21 @@
 import CoreGraphics
 import Foundation
 
-/// A rule for which displays belong to a group. Rules describe displays rather than naming them where
-/// possible, so a group survives swapping monitors.
+/// Which displays belong to a group. Rules describe displays rather than naming them, so a group
+/// survives swapping monitors.
 public enum DisplayRule: Sendable, Hashable {
     case builtIn
     case external
     case landscape
     case portrait
-    /// The display with the menu bar.
     case main
     case leftmost
     case rightmost
     case topmost
     case bottommost
-    /// The display's name, case-insensitive, with `*` and `?` wildcards.
+    /// Case-insensitive, with `*` and `?` wildcards.
     case name(String)
-    /// One specific display. Identical monitors can swap ids, so prefer the other rules.
+    /// Identical monitors can swap uuids, so the other rules are more reliable.
     case uuid(String)
 
     public static let keywords: [DisplayRule] = [
@@ -43,7 +42,6 @@ public enum DisplayRule: Sendable, Hashable {
         self = rule
     }
 
-    /// Position rules compare against the other connected displays.
     public func matches(_ display: Display, among displays: [Display]) -> Bool {
         switch self {
         case .builtIn: display.isBuiltIn
@@ -62,7 +60,7 @@ public enum DisplayRule: Sendable, Hashable {
     }
 }
 
-/// A named set of displays. A display is in the group when it matches any of the rules.
+/// A display is in the group when it matches any of the rules.
 public struct DisplayGroup: Sendable, Equatable {
     public var name: String
     public var rules: [DisplayRule]
@@ -77,9 +75,9 @@ public struct DisplayGroup: Sendable, Equatable {
     }
 }
 
-/// Group membership for the displays connected right now. Computed when displays or config change,
-/// so the key press only looks sets up.
-public struct ResolvedGroups: Sendable, Equatable {
+/// Group membership for the connected displays, computed when displays or config change so the key
+/// press only looks sets up.
+public struct ResolvedGroups: Sendable {
     public var groups: [(name: String, members: Set<UInt32>)]
 
     public init(_ groups: [DisplayGroup], displays: [Display]) {
@@ -89,15 +87,11 @@ public struct ResolvedGroups: Sendable, Equatable {
     public func members(of name: String) -> Set<UInt32>? {
         groups.first { $0.name == name }?.members
     }
-
-    public static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.groups.map(\.name) == rhs.groups.map(\.name) && lhs.groups.map(\.members) == rhs.groups.map(\.members)
-    }
 }
 
 public enum DisplayScope {
-    /// The displays the switcher lists apps from, or nil for every display. Anything that cannot be
-    /// resolved (no mouse display, a missing or disconnected group) falls back to every display.
+    /// The displays to list apps from, or nil for every display. Anything unresolvable (no mouse
+    /// display, a missing or disconnected group) falls back to every display.
     public static func targets(
         for scope: Config.Scope,
         groups: ResolvedGroups,
@@ -120,7 +114,6 @@ public enum DisplayScope {
         }
     }
 
-    /// The display showing the frontmost app's frontmost window.
     public static func focusedDisplay(in snapshot: Snapshot, frontmostPid: Int32?, displays: [Display]) -> UInt32? {
         guard let frontmostPid, let window = snapshot.windows.first(where: { $0.pid == frontmostPid }) else { return nil }
         return DisplayMapping.display(for: window.frame, in: displays)

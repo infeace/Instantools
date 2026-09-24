@@ -1,17 +1,14 @@
 import CoreGraphics
 
-/// A regular (Dock-visible) running app.
 public struct RunningApp: Sendable, Equatable {
     public var pid: Int32
     public var bundleId: String?
     public var name: String
-    public var isHidden: Bool
 
-    public init(pid: Int32, bundleId: String?, name: String, isHidden: Bool = false) {
+    public init(pid: Int32, bundleId: String?, name: String) {
         self.pid = pid
         self.bundleId = bundleId
         self.name = name
-        self.isHidden = isHidden
     }
 }
 
@@ -49,13 +46,12 @@ public struct Display: Sendable, Equatable {
     }
 }
 
-/// Everything the switcher needs at key press. The tracker keeps it fresh so reading it costs no IPC.
+/// Everything the switcher needs at key press, kept fresh by the tracker so reading it costs no IPC.
 public struct Snapshot: Sendable, Equatable {
     /// Most recently used first.
     public var apps: [RunningApp]
     /// Front to back.
     public var windows: [WindowRecord]
-    /// The display each app last had a visible window on, so hidden and minimized apps keep their display.
     public var lastDisplayByPid: [Int32: UInt32]
 
     public init(apps: [RunningApp] = [], windows: [WindowRecord] = [], lastDisplayByPid: [Int32: UInt32] = [:]) {
@@ -65,16 +61,14 @@ public struct Snapshot: Sendable, Equatable {
     }
 }
 
-/// One tile in the switcher. `windowId` is the window to focus, or nil to just activate the app.
+/// One tile in the switcher. `windowId` is the window to focus, or nil to activate the app.
 public struct SwitcherEntry: Sendable, Equatable {
     public var pid: Int32
-    public var bundleId: String?
     public var name: String
     public var windowId: UInt32?
 
-    public init(pid: Int32, bundleId: String?, name: String, windowId: UInt32?) {
+    public init(pid: Int32, name: String, windowId: UInt32?) {
         self.pid = pid
-        self.bundleId = bundleId
         self.name = name
         self.windowId = windowId
     }

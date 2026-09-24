@@ -1,10 +1,9 @@
-import Foundation
+import AppKit
 import InstantTabCore
 import Observation
 
-/// Loads `~/.config/instanttab/config.json5`, writes the documented defaults on first launch, and
-/// reloads on save. Settings edits apply in memory at once and reach the file shortly after, so a
-/// dragged slider writes once. A broken file keeps the last good config and reports the error.
+/// Settings edits apply at once and reach the file shortly after, so a dragged slider writes once. While
+/// the file does not parse, the last good config stays in use and Settings cannot overwrite it.
 @MainActor
 @Observable
 final class ConfigStore {
@@ -14,17 +13,15 @@ final class ConfigStore {
     private(set) var config = Config()
     private(set) var error: String?
     private(set) var warnings: [String] = []
+    private(set) var fileIsBroken = false
     @ObservationIgnored var onChange: ((Config) -> Void)?
 
     @ObservationIgnored private var directorySource: DispatchSourceFileSystemObject?
     @ObservationIgnored private var fileSource: DispatchSourceFileSystemObject?
     @ObservationIgnored private var reloadWork: DispatchWorkItem?
     @ObservationIgnored private var saveWork: DispatchWorkItem?
-    /// What this process last wrote, so its own save is not read back as an outside edit.
-    @ObservationIgnored private var lastWritten: Data?
     @ObservationIgnored private let persists: Bool
 
-    /// A store that does not persist keeps edits in memory only (for Settings snapshots).
     init(persists: Bool = true) {
         self.persists = persists
     }
@@ -36,8 +33,8 @@ final class ConfigStore {
         watchFile()
     }
 
-    /// Applies an edit from Settings now and saves it to the file shortly after.
     func update(_ edit: (inout Config) -> Void) {
+        guard !fileIsBroken else { return }
         var next = config
         edit(&next)
         guard next != config else { return }
@@ -46,23 +43,36 @@ final class ConfigStore {
         scheduleSave()
     }
 
-    /// Writes any pending edit immediately, for quitting.
+    /// Also replaces a file that does not parse, since the user asked for defaults.
+    func resetToDefaults() {
+        fileIsBroken = false
+        error = nil
+        warnings = []
+        if config != Config() {
+            config = Config()
+            onChange?(config)
+        }
+        scheduleSave()
+        flush()
+    }
+
     func flush() {
         guard saveWork != nil else { return }
         save()
     }
 
     func load() {
-        // Unsaved edits from Settings are newer than the file.
+        // Edits still waiting to be saved are newer than the file.
         guard saveWork == nil else { return }
         guard let data = try? Data(contentsOf: Self.fileURL) else {
             error = "cannot read \(Self.fileURL.path)"
+            fileIsBroken = true
             return
         }
-        guard data != lastWritten else { return }
         do {
             let parsed = try Config.parse(data)
             error = nil
+            fileIsBroken = false
             warnings = parsed.warnings
             for warning in warnings { Diagnostics.log.warning("config: \(warning, privacy: .public)") }
             if parsed.config != config {
@@ -71,8 +81,27 @@ final class ConfigStore {
             }
         } catch {
             self.error = error.description
+            fileIsBroken = true
             Diagnostics.log.error("config: \(error.description, privacy: .public)")
         }
+    }
+
+    /// `.json5` has no default app on most Macs, so TextEdit is the fallback.
+    func openInEditor() {
+        flush()
+        if NSWorkspace.shared.urlForApplication(toOpen: Self.fileURL) != nil {
+            NSWorkspace.shared.open(Self.fileURL)
+        } else {
+            NSWorkspace.shared.open(
+                [Self.fileURL], withApplicationAt: URL(fileURLWithPath: "/System/Applications/TextEdit.app"),
+                configuration: NSWorkspace.OpenConfiguration()
+            )
+        }
+    }
+
+    func revealInFinder() {
+        flush()
+        NSWorkspace.shared.activateFileViewerSelecting([Self.fileURL])
     }
 
     private func scheduleSave() {
@@ -88,13 +117,9 @@ final class ConfigStore {
     private func save() {
         saveWork?.cancel()
         saveWork = nil
-        let data = Data(config.fileContents.utf8)
         do {
             try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-            try data.write(to: Self.fileURL, options: .atomic)
-            lastWritten = data
-            error = nil
-            warnings = []
+            try Data(config.fileContents.utf8).write(to: Self.fileURL, options: .atomic)
         } catch {
             self.error = "cannot save: \(error.localizedDescription)"
             Diagnostics.log.error("config save: \(error.localizedDescription, privacy: .public)")
@@ -108,7 +133,7 @@ final class ConfigStore {
         try? Config.defaultFileContents.write(to: Self.fileURL, atomically: true, encoding: .utf8)
     }
 
-    /// Editors often save by replacing the file, so the directory is watched too and the file watch is re-armed.
+    /// Editors often save by replacing the file, so the directory is watched too and the file watch re-armed.
     private func watchFile() {
         fileSource?.cancel()
         fileSource = watch(Self.fileURL.path, events: [.write, .extend, .delete, .rename, .attrib])

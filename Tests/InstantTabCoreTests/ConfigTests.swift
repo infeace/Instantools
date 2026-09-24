@@ -77,6 +77,12 @@ struct ConfigTests {
         ])
     }
 
+    @Test func duplicateExclusionsKeepTheFirst() throws {
+        let parsed = try parse("{ exclude: [\"com.a\", { bundleId: \"COM.A\", when: \"noWindows\" }] }")
+        #expect(parsed.config.exclude == [.init(bundleId: "com.a")])
+        #expect(parsed.warnings == ["exclude lists 'COM.A' twice, the first rule is used"])
+    }
+
     @Test func unknownKeysAreWarnings() throws {
         let parsed = try parse("{ scoep: \"all\", exclude: [{ bundleId: \"com.a\", wen: \"always\" }] }")
         #expect(parsed.warnings == ["unknown key 'scoep' ignored", "unknown key 'exclude[0].wen' ignored"])
@@ -86,10 +92,10 @@ struct ConfigTests {
         #expect(throws: ConfigError.invalid("scope must be \"all\", \"mouseDisplay\", \"focusedDisplay\", \"mouseGroup\" or \"group:<name>\"")) {
             try parse("{ scope: \"everywhere\" }")
         }
-        #expect(throws: ConfigError.invalid("showDelayMs must be a whole number from 0 to 1000")) {
+        #expect(throws: ConfigError.invalid("showDelayMs must be a whole number from 0 to 500")) {
             try parse("{ showDelayMs: 12.5 }")
         }
-        #expect(throws: ConfigError.invalid("showDelayMs must be a whole number from 0 to 1000")) {
+        #expect(throws: ConfigError.invalid("showDelayMs must be a whole number from 0 to 500")) {
             try parse("{ showDelayMs: true }")
         }
         #expect(throws: ConfigError.invalid("exclude[0].bundleId must be a non-empty string")) {

@@ -4,7 +4,7 @@ import Testing
 
 struct SwitcherSessionTests {
     private func entries(_ pids: [Int32]) -> [SwitcherEntry] {
-        pids.map { SwitcherEntry(pid: $0, bundleId: nil, name: "\($0)", windowId: nil) }
+        pids.map { SwitcherEntry(pid: $0, name: "\($0)", windowId: nil) }
     }
 
     @Test func moveWrapsBothWays() {
@@ -66,11 +66,5 @@ struct DisplayMappingTests {
 
     @Test func offScreenIsNil() {
         #expect(DisplayMapping.display(for: CGRect(x: -5000, y: 0, width: 100, height: 100), in: displays) == nil)
-    }
-
-    @Test func pointLookup() {
-        #expect(DisplayMapping.display(containing: CGPoint(x: 2000, y: -300), in: displays) == 2)
-        #expect(DisplayMapping.display(containing: CGPoint(x: 10, y: 10), in: displays) == 1)
-        #expect(DisplayMapping.display(containing: CGPoint(x: 10, y: -10), in: displays) == nil)
     }
 }

@@ -13,7 +13,7 @@ extension SkyLight {
     private static let postEventRecordTo = symbol("SLPSPostEventRecordTo", as: PostEventRecordTo.self)
     private static let axUIElementGetWindow = symbol("_AXUIElementGetWindow", as: AXUIElementGetWindow.self)
 
-    /// Marks the switch as user initiated, so WindowServer does not suppress it.
+    /// Marks the switch as user initiated so WindowServer does not suppress it.
     private static let userGenerated: UInt32 = 0x200
 
     public static var canFocusWindows: Bool {
@@ -21,7 +21,7 @@ extension SkyLight {
     }
 
     /// Makes `pid` the front process with `windowId` (0 for none) as its front window, then makes that
-    /// window key. This is the yabai / AltTab recipe, since no public API moves focus across apps.
+    /// window key. No public API moves focus across apps; this is the yabai and AltTab recipe.
     @discardableResult
     public static func focus(pid: pid_t, windowId: CGWindowID) -> Bool {
         guard let getProcessForPID, let setFrontProcessWithOptions else { return false }
@@ -32,10 +32,8 @@ extension SkyLight {
         return true
     }
 
-    /// Posts a synthetic left-mouse-down record to make the window key. The layout is reverse engineered
-    /// (CGSInternal's CGSEvent.h). Only the down is sent and it is aimed far past the window's bottom right,
-    /// so no content is ever clicked. The buffer is 0x100 bytes although the record is 0xf8, because
-    /// WindowServer reads past the record since macOS 14.7.4.
+    /// A synthetic mouse-down (layout from CGSInternal's CGSEvent.h), aimed far past the window so nothing is
+    /// clicked. The buffer is 0x100 bytes for a 0xf8 record because WindowServer reads past it since 14.7.4.
     private static func makeKeyWindow(_ psn: inout ProcessSerialNumber, _ windowId: CGWindowID) {
         guard let postEventRecordTo else { return }
         var bytes = [UInt8](repeating: 0, count: 0x100)
@@ -49,7 +47,6 @@ extension SkyLight {
         _ = bytes.withUnsafeMutableBufferPointer { postEventRecordTo(&psn, $0.baseAddress!) }
     }
 
-    /// The CGWindowID behind an Accessibility window element.
     public static func windowId(of element: AXUIElement) -> CGWindowID? {
         guard let axUIElementGetWindow else { return nil }
         var id: CGWindowID = 0

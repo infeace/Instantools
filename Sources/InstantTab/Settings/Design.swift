@@ -1,11 +1,9 @@
 import AppKit
 import SwiftUI
 
-// The building blocks every Settings pane is made of: native controls inside cards and rows that
-// keep spacing and hierarchy consistent. Liquid Glass is used where Apple intends it (buttons and
-// other controls that float above content), with a plain fallback before macOS 26.
+// Native controls inside cards and rows with consistent spacing. Liquid Glass is used only where Apple
+// intends it, on controls floating above content, with a plain fallback before macOS 26.
 
-/// A white symbol on a colored rounded square, as System Settings draws its panes.
 struct IconTile: View {
     let symbol: String
     let colors: [Color]
@@ -24,7 +22,6 @@ struct IconTile: View {
     }
 }
 
-/// The pane's icon: a tile, or the app icon for About.
 struct PaneIcon: View {
     let pane: SettingsPane
     var size: CGFloat = 20
@@ -50,7 +47,6 @@ struct PaneHeader: View {
             Text(pane.title)
                 .font(.system(size: 28, weight: .bold))
             Text(subtitle)
-                .font(.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -62,24 +58,21 @@ private struct CompactLayoutKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-    /// True when the pane is narrow: rows stack their control under the text instead of beside it.
     var compactLayout: Bool {
         get { self[CompactLayoutKey.self] }
         set { self[CompactLayoutKey.self] = newValue }
     }
 }
 
-/// The scrolling page every pane lives in. It keeps a comfortable reading width on wide windows and
-/// switches rows to a stacked layout on narrow ones.
 struct PaneScroll<Content: View>: View {
-    /// Receives whether the layout is compact, for sections laid out by the pane itself.
     @ViewBuilder let content: (_ compact: Bool) -> Content
     @State private var width: CGFloat = 700
 
     var body: some View {
+        let compact = width < 620
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
-                content(width < 620)
+                content(compact)
             }
             .frame(maxWidth: 680, alignment: .leading)
             .padding(.horizontal, width < 560 ? 18 : 30)
@@ -88,11 +81,10 @@ struct PaneScroll<Content: View>: View {
             .frame(maxWidth: .infinity)
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-        .environment(\.compactLayout, width < 620)
+        .environment(\.compactLayout, compact)
     }
 }
 
-/// A titled group of rows.
 struct SettingsCard<Content: View>: View {
     var title: String?
     var footer: String?
@@ -128,7 +120,13 @@ enum Card {
     static let stroke = Color.primary.opacity(0.07)
 }
 
-/// A title, an optional explanation, and a control: beside the text, or under it when narrow.
+/// Beside or stacked, keeping the children's identity when the layout switches.
+func adaptiveLayout(compact: Bool, spacing: CGFloat = 16) -> AnyLayout {
+    compact
+        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+        : AnyLayout(HStackLayout(alignment: .center, spacing: spacing))
+}
+
 struct SettingsRow<Trailing: View>: View {
     let title: String
     var subtitle: String?
@@ -136,41 +134,89 @@ struct SettingsRow<Trailing: View>: View {
     @Environment(\.compactLayout) private var compact
 
     var body: some View {
-        Group {
-            if compact {
-                VStack(alignment: .leading, spacing: 10) {
-                    labels
-                    trailing
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                HStack(alignment: .center, spacing: 16) {
-                    labels
-                    Spacer(minLength: 12)
-                    trailing
+        let layout = adaptiveLayout(compact: compact)
+        layout {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            if !compact { Spacer(minLength: 12) }
+            trailing
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-    }
-
-    private var labels: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-            if let subtitle {
-                Text(subtitle)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
     }
 }
 
 struct RowDivider: View {
     var body: some View {
         Divider().padding(.leading, 16)
+    }
+}
+
+struct MessageRow: View {
+    let text: String
+    var isError = true
+
+    var body: some View {
+        Label(text, systemImage: isError ? "exclamationmark.triangle.fill" : "exclamationmark.triangle")
+            .foregroundStyle(isError ? .red : .orange)
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Settings is read-only while the file does not parse, so the file is never overwritten.
+struct FileProblemBanner: View {
+    let configStore: ConfigStore
+
+    var body: some View {
+        if configStore.fileIsBroken, let error = configStore.error {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.red)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("The settings file has an error")
+                        .font(.headline)
+                    Text("Changes here are paused until it is fixed, so your file is never overwritten. \(error)")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Open File") { configStore.openInEditor() }
+                        .glassButton()
+                        .padding(.top, 4)
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.red.opacity(0.08), in: Card.shape)
+            .overlay(Card.shape.strokeBorder(Color.red.opacity(0.3)))
+        }
+    }
+}
+
+struct FileProblemSection: View {
+    let configStore: ConfigStore
+
+    var body: some View {
+        if configStore.fileIsBroken, let error = configStore.error {
+            Section {
+                LabeledContent {
+                    Button("Open File") { configStore.openInEditor() }
+                } label: {
+                    Label("The settings file has an error", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                    Text("Changes here are paused until it is fixed. \(error)")
+                }
+            }
+        }
     }
 }
 
@@ -186,7 +232,6 @@ struct StatusDot: View {
 }
 
 extension View {
-    /// A Liquid Glass surface for controls floating above content, a material before macOS 26.
     @ViewBuilder func glassPanel(in shape: some Shape) -> some View {
         if #available(macOS 26, *) {
             glassEffect(.regular, in: shape)
@@ -195,7 +240,7 @@ extension View {
         }
     }
 
-    /// No duplicate title in the toolbar (each pane has its own), and content scrolls under it.
+    /// Each pane shows its own title, so the toolbar drops it and content scrolls under the toolbar.
     @ViewBuilder func modernToolbar() -> some View {
         if #available(macOS 15, *) {
             toolbar(removing: .title).toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
@@ -204,7 +249,6 @@ extension View {
         }
     }
 
-    /// Liquid Glass buttons on macOS 26, bordered ones before.
     @ViewBuilder func glassButton(prominent: Bool = false) -> some View {
         if #available(macOS 26, *) {
             if prominent { buttonStyle(.glassProminent) } else { buttonStyle(.glass) }

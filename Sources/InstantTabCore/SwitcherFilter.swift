@@ -1,7 +1,5 @@
 public enum SwitcherFilter {
-    /// The switcher's entries, one per app, most recently used first. Pure and allocation-light:
-    /// this runs on every key press.
-    /// `targets` are the displays in scope (from `DisplayScope.targets`), or nil for every display.
+    /// `targets` nil means every display. Runs on every key press.
     public static func entries(
         for snapshot: Snapshot,
         config: Config,
@@ -10,15 +8,16 @@ public enum SwitcherFilter {
     ) -> [SwitcherEntry] {
         let windowsByPid = Dictionary(grouping: snapshot.windows, by: \.pid)
         let liveDisplays = Set(displays.map(\.id))
+        let exclusions = ExclusionMatcher(config.exclude)
 
         var listed: [SwitcherEntry] = []
         var trailing: [SwitcherEntry] = []
         for app in snapshot.apps {
             let windows = windowsByPid[app.pid] ?? []
-            if config.isExcluded(bundleId: app.bundleId, hasWindows: !windows.isEmpty) { continue }
+            if exclusions.isExcluded(bundleId: app.bundleId, hasWindows: !windows.isEmpty) { continue }
 
             func entry(_ windowId: UInt32?) -> SwitcherEntry {
-                SwitcherEntry(pid: app.pid, bundleId: app.bundleId, name: app.name, windowId: windowId)
+                SwitcherEntry(pid: app.pid, name: app.name, windowId: windowId)
             }
 
             if let targets {
@@ -28,9 +27,8 @@ public enum SwitcherFilter {
                     listed.append(entry(window.id))
                     continue
                 }
-                // Visible only on other displays.
                 if !windows.isEmpty { continue }
-                // Hidden or minimized apps stay with the display they were last seen on.
+                // Hidden and minimized apps stay with the display they were last seen on.
                 if let last = snapshot.lastDisplayByPid[app.pid], liveDisplays.contains(last), !targets.contains(last) { continue }
             } else if let window = windows.first {
                 listed.append(entry(window.id))
@@ -46,7 +44,7 @@ public enum SwitcherFilter {
         return listed + trailing
     }
 
-    /// Like native Cmd+Tab: forward starts on the previous app, backward starts on the last one.
+    /// Like native Cmd+Tab: forward starts on the previous app, backward on the last one.
     public static func initialIndex(count: Int, firstIsFrontmost: Bool, reverse: Bool) -> Int {
         guard count > 0 else { return 0 }
         if reverse { return count - 1 }

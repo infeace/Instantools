@@ -1,11 +1,8 @@
-import AppKit
+import Foundation
 import ServiceManagement
 
-/// Start at login through a LaunchAgent in ~/Library/LaunchAgents. Toggling only writes or removes the
-/// file, so it takes effect instantly and never restarts the running copy; launchd picks the agent up
-/// at the next login and then relaunches InstantTab if it ever crashes, so native Cmd+Tab is never left
-/// off. A classic agent is used rather than SMAppService: without a Team ID, macOS pins an SMAppService
-/// agent to the exact binary that registered it, and every rebuild then fails its launch constraint.
+/// A classic LaunchAgent, toggled by writing or removing its file. SMAppService is avoided because without
+/// a Team ID macOS pins its agent to the exact binary that registered it, so every rebuild breaks it.
 @MainActor
 enum LoginItem {
     static let label = "com.infeace.InstantTab"
@@ -14,7 +11,6 @@ enum LoginItem {
         FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/LaunchAgents/\(label).plist")
     }
 
-    /// Whether this copy was started by the login agent.
     nonisolated static var isSupervised: Bool {
         ProcessInfo.processInfo.environment["INSTANTTAB_LAUNCH_AGENT"] == "1"
     }
@@ -23,8 +19,10 @@ enum LoginItem {
         FileManager.default.fileExists(atPath: plistURL.path)
     }
 
-    /// Classic agents need no approval, though macOS can still switch them off in Login Items.
-    static var needsApproval: Bool { false }
+    /// On here, but switched off in System Settings > Login Items.
+    static var isBlockedInLoginItems: Bool {
+        isEnabled && SMAppService.statusForLegacyPlist(at: plistURL) == .requiresApproval
+    }
 
     static func setEnabled(_ enabled: Bool) throws {
         if enabled {
@@ -34,7 +32,17 @@ enum LoginItem {
         }
     }
 
-    static func openSettings() {
+    static func repairIfMoved() {
+        guard isEnabled,
+              let data = try? Data(contentsOf: plistURL),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              let recorded = (plist["ProgramArguments"] as? [String])?.first,
+              !FileManager.default.fileExists(atPath: recorded)
+        else { return }
+        try? write()
+    }
+
+    static func openLoginItemsSettings() {
         SMAppService.openSystemSettingsLoginItems()
     }
 

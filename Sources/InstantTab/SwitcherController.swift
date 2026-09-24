@@ -1,14 +1,11 @@
 import AppKit
 import InstantTabCore
 
-/// Runs a Cmd+Tab session: picks the entries and the starting selection from the snapshot at key down,
-/// draws the panel after the configured delay, and focuses the selection when Cmd is released.
 @MainActor
 final class SwitcherController {
     private let tracker: WindowTracker
     private let displays: Displays
-    private let icons: IconCache
-    private let panel = SwitcherPanel()
+    private let panel: SwitcherPanel
     private let focuser = Focuser()
     private let probe = FrameProbe()
     private var taps: InputTaps?
@@ -16,7 +13,6 @@ final class SwitcherController {
     var config = Config() {
         didSet { resolveGroups() }
     }
-    /// Group membership for the connected displays, updated when displays or groups change.
     private var groups = ResolvedGroups([], displays: [])
     private var session: SwitcherSession?
     private var sessionDisplay: UInt32?
@@ -24,15 +20,15 @@ final class SwitcherController {
     private var pressNanoseconds: UInt64 = 0
     private var showWork: DispatchWorkItem?
     private var releasePoll: Timer?
-    private var lastChosen: (pid: Int32, nanoseconds: UInt64)?
+    private var lastChoice: (pid: Int32, previousFrontmost: Int32?, nanoseconds: UInt64)?
 
-    /// Key press to first frame of the panel, minus the configured show delay.
+    /// Key press to first frame of the panel, minus the show delay.
     private(set) var latency = LatencyStats()
 
     init(tracker: WindowTracker, displays: Displays, icons: IconCache) {
         self.tracker = tracker
         self.displays = displays
-        self.icons = icons
+        panel = SwitcherPanel(icons: icons)
         panel.onShown = { [weak self] view in
             guard let self else { return }
             probe.arm(view: view, startNanoseconds: pressNanoseconds + UInt64(config.showDelayMs) * 1_000_000)
@@ -52,21 +48,15 @@ final class SwitcherController {
     }
 
     func warmUp() {
-        let entries = currentEntries(targets: nil)
-        panel.warmUp(entries: entries, icons: icons, on: displays.screen(for: displays.mouseDisplayId()), iconSize: config.iconSize)
+        panel.warmUp(entries: currentEntries(targets: nil), on: displays.screen(for: displays.mouseDisplayId()), iconSize: config.iconSize)
     }
 
-    // MARK: Input
-
     func hotKeyPressed(_ action: HotKeys.Action, eventNanoseconds: UInt64) {
-        let delta = action == .forward ? 1 : -1
-        if var active = session {
-            active.move(by: delta)
-            session = active
-            panel.select(active.selectedIndex)
-            return
+        if session != nil {
+            move(by: action == .forward ? 1 : -1)
+        } else {
+            begin(reverse: action == .backward, eventNanoseconds: eventNanoseconds)
         }
-        begin(reverse: action == .backward, eventNanoseconds: eventNanoseconds)
     }
 
     func commandReleased() {
@@ -75,18 +65,13 @@ final class SwitcherController {
     }
 
     func sessionKey(_ key: SessionKey) {
-        guard var active = session else { return }
         switch key {
-        case .cancel:
-            end()
-        case .previous, .next:
-            active.move(by: key == .next ? 1 : -1)
-            session = active
-            panel.select(active.selectedIndex)
+        case .cancel: if session != nil { end() }
+        case .previous: move(by: -1)
+        case .next: move(by: 1)
         }
     }
 
-    /// The snapshot changed during a session: keep the selection and redraw if needed.
     func modelChanged() {
         guard var active = session else { return }
         let entries = currentEntries(targets: sessionTargets)
@@ -95,21 +80,24 @@ final class SwitcherController {
         active.reconcile(with: entries)
         session = active
         if let screen = displays.screen(for: sessionDisplay) {
-            panel.update(entries: active.entries, selected: active.selectedIndex, icons: icons, on: screen, iconSize: config.iconSize)
+            panel.update(entries: active.entries, selected: active.selectedIndex, on: screen, iconSize: config.iconSize)
         }
     }
 
-    // MARK: Session
+    private func move(by delta: Int) {
+        guard var active = session else { return }
+        active.move(by: delta)
+        session = active
+        panel.select(active.selectedIndex)
+    }
 
     private func begin(reverse: Bool, eventNanoseconds: UInt64) {
-        let now = MachClock.nanoseconds(fromTicks: MachClock.now())
-        // Prefer the key event's own timestamp when it is plausible, so latency includes queueing.
+        let now = DispatchTime.now().uptimeNanoseconds
+        // The key event's own timestamp, when plausible, makes latency include queueing.
         pressNanoseconds = eventNanoseconds > 0 && eventNanoseconds <= now && now - eventNanoseconds < 1_000_000_000
             ? eventNanoseconds : now
 
-        // Right after a switch, macOS may not report the new frontmost app yet.
-        let recentlyChosen = lastChosen.flatMap { now - $0.nanoseconds < 1_000_000_000 ? $0.pid : nil }
-        let frontmost = recentlyChosen ?? NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let frontmost = effectiveFrontmost(now: now)
         let mouseDisplay = displays.mouseDisplayId()
         let focusedDisplay = config.scope == .focusedDisplay
             ? DisplayScope.focusedDisplay(in: tracker.snapshot, frontmostPid: frontmost, displays: displays.displays) : nil
@@ -118,10 +106,10 @@ final class SwitcherController {
         guard !entries.isEmpty else { return }
         let index = SwitcherFilter.initialIndex(count: entries.count, firstIsFrontmost: entries[0].pid == frontmost, reverse: reverse)
         session = SwitcherSession(entries: entries, selectedIndex: index)
-        sessionDisplay = mouseDisplay
+        sessionDisplay = focusedDisplay ?? mouseDisplay
         sessionTargets = targets
 
-        // Cmd can already be up if the tap was very quick: switch without drawing.
+        // A very quick tap can release Cmd before this runs: switch without drawing.
         guard CGEventSource.flagsState(.combinedSessionState).contains(.maskCommand) else { return commit() }
 
         taps?.setSessionActive(true)
@@ -138,15 +126,24 @@ final class SwitcherController {
         tracker.refreshWindows()
     }
 
+    /// Right after a switch macOS may still report the old frontmost app, so the choice stands in for it.
+    private func effectiveFrontmost(now: UInt64) -> Int32? {
+        let reported = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        guard let lastChoice, now - lastChoice.nanoseconds < 1_000_000_000, reported == lastChoice.previousFrontmost else {
+            return reported
+        }
+        return lastChoice.pid
+    }
+
     private func showPanel() {
         guard let active = session, let screen = displays.screen(for: sessionDisplay) else { return }
-        panel.show(entries: active.entries, selected: active.selectedIndex, icons: icons, on: screen, iconSize: config.iconSize)
+        panel.show(entries: active.entries, selected: active.selectedIndex, on: screen, iconSize: config.iconSize)
     }
 
     private func commit() {
         guard let entry = session?.selected else { return end() }
         focuser.focus(entry)
-        lastChosen = (entry.pid, MachClock.nanoseconds(fromTicks: MachClock.now()))
+        lastChoice = (entry.pid, NSWorkspace.shared.frontmostApplication?.processIdentifier, DispatchTime.now().uptimeNanoseconds)
         end()
         tracker.noteChosen(entry.pid)
     }
@@ -163,7 +160,7 @@ final class SwitcherController {
         taps?.setSessionActive(false)
     }
 
-    /// Backstop for the modifier tap: catches a missed release, or works alone before permissions are granted.
+    /// Backstop for the modifier tap: catches a missed release, and works alone before permissions exist.
     private func startReleasePoll() {
         let timer = Timer(timeInterval: 0.02, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {

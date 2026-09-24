@@ -3,15 +3,19 @@ import InstantTabCore
 import SkyLightShim
 import SwiftUI
 
-/// `InstantTab --snapshot-settings <pane> <out.png> [light|dark]` renders a Settings pane to a PNG and
-/// exits, without touching Cmd+Tab. It lets UI changes be checked without Screen Recording permission.
+/// `InstantTab --snapshot-settings <pane> <out.png> [light|dark] [--sample] [--narrow] [--no-access]`
+/// renders a Settings pane to a PNG and exits without touching Cmd+Tab, so UI changes can be checked
+/// without Screen Recording permission. Panes: general, monitors, exclusions, about, group-editor.
 @MainActor
 enum SettingsSnapshot {
     static func runIfRequested() {
         let arguments = CommandLine.arguments
-        guard let flag = arguments.firstIndex(of: "--snapshot-settings"), arguments.count > flag + 2 else { return }
-        let paneName = arguments[flag + 1]
-        let pane = SettingsPane(rawValue: paneName) ?? .general
+        guard let flag = arguments.firstIndex(of: "--snapshot-settings") else { return }
+        let paneName = arguments.count > flag + 1 ? arguments[flag + 1] : ""
+        guard arguments.count > flag + 2, paneName == "group-editor" || SettingsPane(rawValue: paneName) != nil else {
+            FileHandle.standardError.write(Data("usage: InstantTab --snapshot-settings <general|monitors|exclusions|about|group-editor> <out.png> [light|dark] [--sample] [--narrow] [--no-access]\n".utf8))
+            exit(2)
+        }
         let output = URL(fileURLWithPath: arguments[flag + 2])
         let dark = arguments.count > flag + 3 && arguments[flag + 3] == "dark"
 
@@ -43,33 +47,34 @@ enum SettingsSnapshot {
             setPaused: { _ in },
             latency: {
                 var stats = LatencyStats()
-                for sample: UInt64 in [6_100_000, 7_400_000, 8_200_000, 9_000_000, 12_600_000] { stats.record(sample) }
+                for sample: UInt64 in [6_100_000, 7_400_000, 6_800_000, 8_200_000, 7_000_000, 9_000_000, 6_400_000] { stats.record(sample) }
                 return stats
             },
             displays: { displays.displays },
             mouseDisplay: { displays.mouseDisplayId() },
+            accessibilityGranted: { !arguments.contains("--no-access") },
             recentApps: {
                 NSWorkspace.shared.runningApplications
                     .filter { $0.activationPolicy == .regular && $0 != .current }
                     .map(\.processIdentifier)
             }
         ))
-        let view: NSView = if paneName == "group-editor" {
+        let view: NSView = if let pane = SettingsPane(rawValue: paneName) {
+            NSHostingView(rootView: SettingsView(model: model, initialPane: pane))
+        } else {
             NSHostingView(rootView: GroupEditor(
                 draft: GroupDraft(group: DisplayGroup(name: "Desk", rules: [.external, .name("DELL*")]), originalName: "Desk"),
                 displays: displays.displays, takenNames: ["Laptop"], save: { _ in }
             ))
-        } else {
-            NSHostingView(rootView: SettingsView(model: model, initialPane: pane))
         }
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: arguments.contains("--narrow") ? 700 : 900, height: 1100),
+            contentRect: NSRect(x: 0, y: 0, width: arguments.contains("--narrow") ? 720 : 900, height: 1500),
             styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false
         )
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.contentView = view
-        // Drawn normally but kept behind the desktop picture, so nothing flashes on screen.
+        // Drawn normally but behind the desktop picture, so nothing flashes on screen.
         window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) - 1)
         window.ignoresMouseEvents = true
         window.center()
@@ -77,13 +82,9 @@ enum SettingsSnapshot {
         RunLoop.main.run(until: Date().addingTimeInterval(1.5))
 
         guard let image = SkyLight.captureOwnWindow(CGWindowID(window.windowNumber)),
-              let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+              let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]),
+              (try? png.write(to: output)) != nil
         else { exit(1) }
-        do {
-            try png.write(to: output)
-            exit(0)
-        } catch {
-            exit(1)
-        }
+        exit(0)
     }
 }

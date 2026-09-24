@@ -9,14 +9,11 @@ final class HotKeys {
         case backward = 2
     }
 
-    /// Receives the action and the key event's time in nanoseconds of uptime.
     var onPress: ((Action, UInt64) -> Void)?
 
     private var refs: [EventHotKeyRef] = []
     private var handler: EventHandlerRef?
     private static let signature: OSType = 0x494E_5442 // "INTB"
-
-    var isRegistered: Bool { !refs.isEmpty }
 
     func register() -> Bool {
         guard refs.isEmpty else { return true }

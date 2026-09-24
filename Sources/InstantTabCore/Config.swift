@@ -5,7 +5,6 @@ public struct Config: Sendable, Equatable {
         case all
         case mouseDisplay
         case focusedDisplay
-        /// The first group containing the display under the mouse, or just that display.
         case mouseGroup
         case group(String)
 
@@ -52,13 +51,6 @@ public struct Config: Sendable, Equatable {
             self.bundleId = bundleId
             self.when = when
         }
-
-        /// Bundle ids are case-insensitive on macOS.
-        func matches(_ candidate: String) -> Bool {
-            let pattern = bundleId.lowercased()
-            let candidate = candidate.lowercased()
-            return pattern.hasSuffix("*") ? candidate.hasPrefix(pattern.dropLast()) : candidate == pattern
-        }
     }
 
     public var showDelayMs = 50
@@ -71,9 +63,27 @@ public struct Config: Sendable, Equatable {
     public init() {}
 
     public func isExcluded(bundleId: String?, hasWindows: Bool) -> Bool {
-        guard let bundleId else { return false }
-        return exclude.contains { rule in
-            rule.matches(bundleId) && (rule.when == .always || !hasWindows)
+        ExclusionMatcher(exclude).isExcluded(bundleId: bundleId, hasWindows: hasWindows)
+    }
+}
+
+/// Exclusion rules with their patterns lowercased once, since matching runs for every app on every
+/// key press. Bundle ids are case-insensitive on macOS.
+public struct ExclusionMatcher: Sendable {
+    private let rules: [(pattern: String, isPrefix: Bool, when: Config.Exclusion.When)]
+
+    public init(_ exclusions: [Config.Exclusion]) {
+        rules = exclusions.map { rule in
+            let pattern = rule.bundleId.lowercased()
+            return pattern.hasSuffix("*") ? (String(pattern.dropLast()), true, rule.when) : (pattern, false, rule.when)
+        }
+    }
+
+    public func isExcluded(bundleId: String?, hasWindows: Bool) -> Bool {
+        guard let bundleId, !rules.isEmpty else { return false }
+        let id = bundleId.lowercased()
+        return rules.contains { rule in
+            (rule.isPrefix ? id.hasPrefix(rule.pattern) : id == rule.pattern) && (rule.when == .always || !hasWindows)
         }
     }
 }
@@ -100,8 +110,7 @@ extension Config {
     private static let knownExclusionKeys: Set = ["bundleId", "when"]
     private static let knownGroupKeys: Set = ["name", "match"]
 
-    /// Parses JSON5 (comments, trailing commas and unquoted keys allowed). Missing keys keep their
-    /// defaults, unknown keys are reported as warnings, invalid values are errors.
+    /// Parses JSON5. Missing keys keep their defaults, unknown keys are warnings, invalid values are errors.
     public static func parse(_ data: Data) throws(ConfigError) -> Parsed {
         let object: Any
         do {
@@ -116,8 +125,8 @@ extension Config {
         var warnings = root.keys.sorted().filter { !knownKeys.contains($0) }.map { "unknown key '\($0)' ignored" }
 
         if let value = root["showDelayMs"] {
-            guard !isBoolean(value), let number = value as? Int, (0...1000).contains(number) else {
-                throw .invalid("showDelayMs must be a whole number from 0 to 1000")
+            guard !isBoolean(value), let number = value as? Int, (0...500).contains(number) else {
+                throw .invalid("showDelayMs must be a whole number from 0 to 500")
             }
             config.showDelayMs = number
         }
@@ -139,7 +148,12 @@ extension Config {
         if let value = root["exclude"] {
             guard let rules = value as? [Any] else { throw .invalid("exclude must be a list") }
             for (index, rule) in rules.enumerated() {
-                config.exclude.append(try exclusion(rule, index: index, warnings: &warnings))
+                let parsed = try exclusion(rule, index: index, warnings: &warnings)
+                guard !config.exclude.contains(where: { $0.bundleId.lowercased() == parsed.bundleId.lowercased() }) else {
+                    warnings.append("exclude lists '\(parsed.bundleId)' twice, the first rule is used")
+                    continue
+                }
+                config.exclude.append(parsed)
             }
         }
         if let value = root["displayGroups"] {
@@ -224,8 +238,6 @@ extension Config {
 }
 
 extension Config {
-    /// The documented file for this config: written on first launch and whenever Settings saves.
-    /// Parsing it gives back the same config.
     public var fileContents: String {
         let rules = exclude.map { rule in
             rule.when == .always

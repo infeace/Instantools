@@ -10,28 +10,32 @@ struct ExclusionsPane: View {
 
     var body: some View {
         Form {
-            Section {
-                if rules.isEmpty {
-                    Text("No excluded apps. Every running app shows up, like native Cmd+Tab.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(rules, id: \.bundleId) { rule in
-                        ExclusionRow(
-                            rule: rule,
-                            info: model.apps.info(for: rule.bundleId),
-                            when: model.exclusionWhen(rule.bundleId),
-                            remove: { model.removeExclusion(rule.bundleId) }
-                        )
+            FileProblemSection(configStore: model.configStore)
+            Group {
+                Section {
+                    if rules.isEmpty {
+                        Text("No excluded apps. Every running app shows up, like native Cmd+Tab.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(rules, id: \.bundleId) { rule in
+                            ExclusionRow(
+                                rule: rule,
+                                info: model.apps.info(for: rule.bundleId),
+                                when: model.exclusionWhen(rule.bundleId),
+                                remove: { model.removeExclusion(rule.bundleId) }
+                            )
+                        }
                     }
+                } header: {
+                    Text("Excluded apps")
+                } footer: {
+                    footer
                 }
-            } header: {
-                Text("Excluded apps")
-            } footer: {
-                footer
+                if !model.altTabRulesToImport.isEmpty {
+                    altTabImport
+                }
             }
-            if !model.altTabRulesToImport.isEmpty {
-                altTabImport
-            }
+            .disabled(model.configStore.fileIsBroken)
         }
         .formStyle(.grouped)
         .navigationTitle("Excluded Apps")
@@ -53,6 +57,7 @@ struct ExclusionsPane: View {
                 }
             }
             .fixedSize()
+            .disabled(model.runningAppsToExclude.isEmpty)
             Button("Choose App…") { model.chooseAppsToExclude() }
             Button("Add by ID…") { addingBundleId = true }
                 .popover(isPresented: $addingBundleId, arrowEdge: .bottom) { bundleIdPopover }

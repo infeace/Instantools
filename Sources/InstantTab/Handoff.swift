@@ -1,7 +1,6 @@
 import Foundation
 
-/// Carries "Settings was open" from a copy of InstantTab that is being replaced (by the login agent,
-/// or by a fresh copy when the agent is turned off) to its replacement, so the swap goes unnoticed.
+/// Tells the copy that replaces this one (a reinstall, or the login agent's copy) to reopen Settings.
 enum Handoff {
     private static let key = "reopenSettingsAt"
     private static let window: TimeInterval = 15
@@ -11,7 +10,6 @@ enum Handoff {
         UserDefaults.standard.synchronize()
     }
 
-    /// True once if a replaced copy had Settings open a moment ago.
     static func consumeSettingsOpen() -> Bool {
         let marked = UserDefaults.standard.double(forKey: key)
         guard marked > 0 else { return false }
