@@ -40,25 +40,30 @@ final class Focuser: Sendable {
         guard isCurrent(token), let app = NSRunningApplication(processIdentifier: entry.pid) else { return }
         if app.isHidden { app.unhide() }
 
-        // No visible window (windowless, minimized, or on another Space): activate like native, which
-        // also switches to the app's Space.
+        // No visible window (none open, minimized, or on another Space): open the app like a Dock click.
+        // That activates it, switches to its Space, restores a minimized window, and has an app with no
+        // window, like Finder, open one, as AltTab does.
         guard let windowId = entry.windowId else {
-            app.activate(options: .activateAllWindows)
-            // macOS can decline the activation and still report success, so check that it happened.
-            queue.asyncAfter(deadline: .now() + .milliseconds(150)) { [self] in
-                guard isCurrent(token), !app.isActive else { return }
-                SkyLight.focus(pid: entry.pid, windowId: 0)
+            guard let url = app.bundleURL else { return activate(app, token: token) }
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { [self] _, error in
+                if error != nil { activate(app, token: token) }
             }
             return
         }
-        guard SkyLight.focus(pid: entry.pid, windowId: windowId) else {
-            app.activate()
-            return
-        }
+        guard SkyLight.focus(pid: entry.pid, windowId: windowId) else { return activate(app, token: token) }
         guard AXIsProcessTrusted() else { return }
         raiseQueue.async { [self] in
             guard isCurrent(token) else { return }
             raise(windowId, of: entry.pid)
+        }
+    }
+
+    /// macOS can decline an activation and still report success, so this checks that it happened.
+    private func activate(_ app: NSRunningApplication, token: Int) {
+        app.activate(options: .activateAllWindows)
+        queue.asyncAfter(deadline: .now() + .milliseconds(150)) { [self] in
+            guard isCurrent(token), !app.isActive else { return }
+            SkyLight.focus(pid: app.processIdentifier, windowId: 0)
         }
     }
 
