@@ -5,18 +5,21 @@ import QuartzCore
 /// tick's target timestamp is when the panel reaches the screen.
 @MainActor
 final class FrameProbe: NSObject {
+    private let view: NSView
     private var link: CADisplayLink?
-    private var linkedView: NSView?
     private var startNanoseconds: UInt64?
     var onMeasured: ((UInt64) -> Void)?
 
-    func arm(view: NSView, startNanoseconds: UInt64) {
+    init(view: NSView) {
+        self.view = view
+    }
+
+    /// The link follows the view to whichever display it is on.
+    func arm(startNanoseconds: UInt64) {
         self.startNanoseconds = startNanoseconds
-        if linkedView !== view {
-            link?.invalidate()
+        if link == nil {
             link = view.displayLink(target: self, selector: #selector(tick(_:)))
             link?.add(to: .main, forMode: .common)
-            linkedView = view
         }
         link?.isPaused = false
     }

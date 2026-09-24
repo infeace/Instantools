@@ -31,14 +31,12 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
     let bottom = NSColor(srgbRed: 0.24, green: 0.25, blue: 0.86, alpha: 1)
     let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: [top.cgColor, bottom.cgColor] as CFArray, locations: [0, 1])!
     context.drawLinearGradient(gradient, start: CGPoint(x: 512, y: 924), end: CGPoint(x: 512, y: 100), options: [])
-    // Soft light from the top.
     let glow = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
                           colors: [NSColor(white: 1, alpha: 0.22).cgColor, NSColor(white: 1, alpha: 0).cgColor] as CFArray,
                           locations: [0, 1])!
     context.drawRadialGradient(glow, startCenter: CGPoint(x: 512, y: 980), startRadius: 0,
                                endCenter: CGPoint(x: 512, y: 980), endRadius: 700, options: [])
 
-    // Two windows: the one behind, and the one being switched to.
     func window(_ rect: CGRect, alpha: CGFloat) {
         let path = CGPath(roundedRect: rect, cornerWidth: 54, cornerHeight: 54, transform: nil)
         context.addPath(path)
@@ -51,7 +49,6 @@ func drawIcon(size: CGFloat) -> NSBitmapImageRep {
     window(CGRect(x: 356, y: 290, width: 432, height: 330), alpha: 1)
     context.restoreGState()
 
-    // A lightning bolt on the front window.
     let center = CGPoint(x: 572, y: 455)
     let bolt: [CGPoint] = [(34, 118), (-62, -12), (-2, -12), (-30, -118), (66, 18), (6, 18)]
         .map { CGPoint(x: center.x + $0.0, y: center.y + $0.1) }

@@ -27,7 +27,7 @@ struct AboutPane: View {
                     Button {
                         model.configStore.revealInFinder()
                     } label: {
-                        Label("Settings File", systemImage: "doc.text")
+                        Label("Show Settings File", systemImage: "doc.text")
                     }
                 }
                 .glassButton()
@@ -39,9 +39,9 @@ struct AboutPane: View {
 
             SettingsCard(title: "How it stays fast") {
                 fact("bolt.fill", "Nothing is looked up when you press Tab", "Apps and windows are tracked in the background, so the switcher only reads memory.")
-                RowDivider()
+                RowDivider(indented: true)
                 fact("rectangle.stack.fill", "The switcher is built once", "It is drawn at launch and reused, so showing it costs a few milliseconds.")
-                RowDivider()
+                RowDivider(indented: true)
                 fact("arrow.uturn.backward", "Native Cmd+Tab always comes back", "Quitting, pausing or a crash hands Cmd+Tab back to macOS.")
             }
 
@@ -50,24 +50,15 @@ struct AboutPane: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
         }
-        .navigationTitle("About")
     }
 
     private func fact(_ symbol: String, _ title: String, _ detail: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+        SettingsRow(title: title, subtitle: detail) {
             Image(systemName: symbol)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.tint)
-                .frame(width: 22, height: 22)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                Text(detail)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer()
+        } trailing: {
+            EmptyView()
         }
-        .padding(14)
     }
 }

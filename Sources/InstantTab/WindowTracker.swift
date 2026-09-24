@@ -1,7 +1,8 @@
 import AppKit
 import InstantTabCore
 
-/// Keeps the snapshot fresh so the key press never queries anything.
+/// Keeps the snapshot current so the key press never queries anything. Window changes inside the active
+/// app are not observed, so each key press also starts a refresh.
 @MainActor
 final class WindowTracker {
     private(set) var snapshot = Snapshot()
@@ -22,7 +23,7 @@ final class WindowTracker {
     }
 
     func start() {
-        reloadApps()
+        reloadApps(publishing: false)
         windows = Self.queryWindows()
         seedOrder()
         publish()
@@ -35,9 +36,12 @@ final class WindowTracker {
 
         let center = NSWorkspace.shared.notificationCenter
         center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
-            let pid = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier
+            // Menu bar apps activate too, but are never listed.
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.activationPolicy == .regular else { return }
+            let pid = app.processIdentifier
             MainActor.assumeIsolated {
-                guard let self, let pid else { return }
+                guard let self else { return }
                 if self.appsByPid[pid] == nil { self.reloadApps() }
                 self.mru.touch(pid)
                 self.publish()
@@ -90,7 +94,7 @@ final class WindowTracker {
         }
     }
 
-    private func reloadApps() {
+    private func reloadApps(publishing: Bool = true) {
         var apps: [Int32: RunningApp] = [:]
         var live: [Int32] = []
         // InstantTab itself is listed only while Settings is open, which makes it a regular app.
@@ -105,7 +109,7 @@ final class WindowTracker {
         appsByPid = apps
         mru.sync(with: live)
         lastDisplayByPid = lastDisplayByPid.filter { apps[$0.key] != nil }
-        publish()
+        if publishing { publish() }
     }
 
     private func seedOrder() {
@@ -145,6 +149,7 @@ final class WindowTracker {
                   (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
                   let boundsInfo = info[kCGWindowBounds as String] as? NSDictionary,
                   let frame = CGRect(dictionaryRepresentation: boundsInfo),
+                  // Tiny layer-0 windows are helpers and overlays, not windows a person would switch to.
                   frame.width >= 40, frame.height >= 40
             else { return nil }
             return WindowRecord(id: id, pid: pid, frame: frame)

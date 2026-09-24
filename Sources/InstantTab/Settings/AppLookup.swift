@@ -5,7 +5,7 @@ final class AppLookup {
     struct Info {
         var name: String
         var icon: NSImage?
-        var isInstalled: Bool
+        var isMissing: Bool
     }
 
     private var cache: [String: Info] = [:]
@@ -20,24 +20,25 @@ final class AppLookup {
 
     private func resolve(_ bundleId: String) -> Info {
         if bundleId.hasSuffix("*") {
-            return Info(name: "Apps starting with \(bundleId.dropLast())", icon: nil, isInstalled: true)
+            return Info(name: "Apps starting with \(bundleId.dropLast())", icon: nil, isMissing: false)
         }
         if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
-            return Info(name: Self.name(of: url), icon: NSWorkspace.shared.icon(forFile: url.path), isInstalled: true)
+            return Info(name: Self.name(of: url), icon: NSWorkspace.shared.icon(forFile: url.path), isMissing: false)
         }
         if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first {
-            return Info(name: app.localizedName ?? bundleId, icon: app.icon, isInstalled: true)
+            return Info(name: app.localizedName ?? bundleId, icon: app.icon, isMissing: false)
         }
-        return Info(name: bundleId, icon: nil, isInstalled: false)
+        return Info(name: bundleId, icon: nil, isMissing: true)
     }
 
-    static func name(of url: URL) -> String {
+    private static func name(of url: URL) -> String {
         let bundle = Bundle(url: url)
         return bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
             ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
             ?? url.deletingPathExtension().lastPathComponent
     }
 
+    /// A copy, since resizing an app's shared icon would shrink it everywhere else it is drawn.
     static func menuIcon(_ image: NSImage?) -> NSImage? {
         guard let copy = image?.copy() as? NSImage else { return nil }
         copy.size = NSSize(width: 16, height: 16)

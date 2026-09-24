@@ -27,7 +27,6 @@ final class ConfigStore {
     }
 
     func start() {
-        createDefaultFileIfMissing()
         load()
         directorySource = watch(Self.directory.path, events: .write)
         watchFile()
@@ -64,6 +63,8 @@ final class ConfigStore {
     func load() {
         // Edits still waiting to be saved are newer than the file.
         guard saveWork == nil else { return }
+        // A deleted file comes back with the defaults, as on first launch.
+        createDefaultFileIfMissing()
         guard let data = try? Data(contentsOf: Self.fileURL) else {
             error = "cannot read \(Self.fileURL.path)"
             fileIsBroken = true
@@ -128,7 +129,7 @@ final class ConfigStore {
 
     private func createDefaultFileIfMissing() {
         let manager = FileManager.default
-        guard !manager.fileExists(atPath: Self.fileURL.path) else { return }
+        guard persists, !manager.fileExists(atPath: Self.fileURL.path) else { return }
         try? manager.createDirectory(at: Self.directory, withIntermediateDirectories: true)
         try? Config.defaultFileContents.write(to: Self.fileURL, atomically: true, encoding: .utf8)
     }

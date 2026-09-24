@@ -7,6 +7,7 @@ enum Handoff {
 
     static func markSettingsOpen() {
         UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: key)
+        // Called just before exit(0), which would otherwise lose the write.
         UserDefaults.standard.synchronize()
     }
 

@@ -10,12 +10,12 @@ public struct MRUList: Sendable, Equatable {
         order.insert(pid, at: 0)
     }
 
-    public mutating func append(_ pid: Int32) {
+    private mutating func append(_ pid: Int32) {
         guard !order.contains(pid) else { return }
         order.append(pid)
     }
 
-    public mutating func remove(_ pid: Int32) {
+    private mutating func remove(_ pid: Int32) {
         order.removeAll { $0 == pid }
     }
 

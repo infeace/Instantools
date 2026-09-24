@@ -22,7 +22,6 @@ public struct SwitcherSession: Sendable, Equatable {
         selectedIndex = index
     }
 
-    /// Keeps the selected app selected when it is still listed.
     public mutating func reconcile(with newEntries: [SwitcherEntry]) {
         let selectedPid = selected?.pid
         entries = newEntries

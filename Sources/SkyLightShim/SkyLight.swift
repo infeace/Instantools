@@ -25,7 +25,6 @@ extension SkyLight {
     private static let setSymbolicHotKeyEnabled =
         symbol("CGSSetSymbolicHotKeyEnabled", as: SetSymbolicHotKeyEnabled.self)
 
-    /// The change outlives this process, so callers must restore it on every exit path.
     @discardableResult
     public static func setEnabled(_ enabled: Bool, _ hotKey: SymbolicHotKey) -> Bool {
         guard let setSymbolicHotKeyEnabled else { return false }

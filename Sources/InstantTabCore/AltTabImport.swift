@@ -20,7 +20,7 @@ public enum AltTabImport {
 
 extension Config {
     public mutating func addExclusions(_ rules: [Exclusion]) {
-        for rule in rules where !exclude.contains(where: { $0.bundleId.lowercased() == rule.bundleId.lowercased() }) {
+        for rule in rules where !excludes(rule.bundleId) {
             exclude.append(rule)
         }
     }

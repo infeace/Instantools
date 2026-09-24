@@ -9,18 +9,22 @@ struct GeneralPane: View {
         PaneScroll { compact in
             PaneHeader(pane: .general, subtitle: "How InstantTab takes over Cmd+Tab and how the switcher looks.")
             FileProblemBanner(configStore: model.configStore)
-            hero(compact: compact)
+            Hero {
+                SwitcherPreview(apps: model.previewApps, iconSize: model.configStore.config.iconSize, isActive: !model.isPaused)
+            } bar: {
+                statusBar(compact: compact)
+            }
             if !model.accessibilityGranted {
                 Callout(
                     symbol: "hand.raised.fill",
                     colors: [.orange, Color(red: 0.93, green: 0.42, blue: 0.1)],
                     title: "Allow Accessibility access",
-                    message: "Cmd+Tab already works. With access, Esc, the arrow keys, Q and H work in the switcher, and the right window of an app comes forward.",
+                    message: "Cmd+Tab already works. With access, the keys inside the switcher work too, and the right window of an app comes forward.",
                     action: "Allow…",
-                    perform: model.grantAccessibility
+                    perform: Permissions.requestAccessibilityInSettings
                 )
             }
-            speed(compact: compact)
+            SpeedCard(model: model)
             Group {
                 switcher
                 startup
@@ -28,21 +32,6 @@ struct GeneralPane: View {
             .disabled(model.configStore.fileIsBroken)
             configuration
         }
-        .navigationTitle("General")
-    }
-
-    private func hero(compact: Bool) -> some View {
-        SwitcherPreview(
-            apps: model.previewApps,
-            iconSize: model.configStore.config.iconSize,
-            isActive: !model.isPaused,
-            bottomInset: 72
-        )
-        .frame(height: 260)
-        .overlay(alignment: .bottom) {
-            statusBar(compact: compact).padding(12)
-        }
-        .overlay(Hero.shape.strokeBorder(Card.stroke))
     }
 
     private func statusBar(compact: Bool) -> some View {
@@ -58,57 +47,14 @@ struct GeneralPane: View {
         }
     }
 
-    private func speed(compact: Bool) -> some View {
-        let layout = adaptiveLayout(compact: compact, spacing: 18)
-        return SettingsCard(
-            title: "Speed",
-            footer: "Time from pressing Tab to the switcher on screen, after the show delay. One frame on \(model.displayName) is \(String(format: "%.1f", model.frameMilliseconds))ms, the fastest any app can appear."
-        ) {
-            layout {
-                speedStat
-                if !compact { Spacer(minLength: 8) }
-                if model.latency.count > 0 {
-                    LatencyBars(samples: model.latency.chronological, frameMilliseconds: model.frameMilliseconds)
-                        .frame(height: 46)
-                        .frame(maxWidth: compact ? .infinity : 220)
-                }
-            }
-            .padding(16)
-        }
-    }
-
-    private var speedStat: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let typical = model.latency.percentile(50) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(LatencyStats.milliseconds(typical))
-                        .font(.system(size: 32, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                    verdict(for: typical)
-                }
-                Text(spreadText)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text("Not measured yet")
-                    .font(.title3.weight(.semibold))
-                Text("Hold Cmd+Tab a few times to see how fast the switcher appears.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
     private var switcher: some View {
         SettingsCard(title: "Switcher") {
             SettingsRow(title: "Show delay", subtitle: "A Cmd+Tab released sooner switches without drawing anything, like native.") {
-                ValueSlider(value: showDelay, range: 0...500, step: 10, unit: "ms")
+                ValueSlider(label: "Show delay", value: showDelay, range: 0...500, step: 10, unit: "ms")
             }
             RowDivider()
             SettingsRow(title: "Icon size", subtitle: "Icons shrink on their own when many apps are open.") {
-                ValueSlider(value: model.binding(\.iconSize), range: 32...256, step: 8, unit: "pt")
+                ValueSlider(label: "Icon size", value: model.binding(\.iconSize), range: 32...256, step: 8, unit: "pt")
             }
             RowDivider()
             SettingsRow(title: "Apps without visible windows", subtitle: "Hidden, minimized, or with no window open.") {
@@ -154,10 +100,6 @@ struct GeneralPane: View {
                 }
                 .glassButton()
             }
-            if let error = model.configStore.error, !model.configStore.fileIsBroken {
-                RowDivider()
-                MessageRow(text: error)
-            }
             ForEach(model.configStore.warnings, id: \.self) { warning in
                 RowDivider()
                 MessageRow(text: warning, isError: false)
@@ -169,7 +111,7 @@ struct GeneralPane: View {
             }
         }
         .confirmationDialog("Reset all settings?", isPresented: $confirmingReset) {
-            Button("Reset All Settings", role: .destructive) { model.resetAll() }
+            Button("Reset All Settings", role: .destructive) { model.configStore.resetToDefaults() }
         } message: {
             Text("Excluded apps and monitor groups are removed too. This cannot be undone.")
         }
@@ -179,11 +121,57 @@ struct GeneralPane: View {
         let delay = model.binding(\.showDelayMs)
         return Binding(get: { Double(delay.wrappedValue) }, set: { delay.wrappedValue = Int($0) })
     }
+}
+
+/// Its own view, so a dragged slider does not re-sort the latency samples on every tick.
+private struct SpeedCard: View {
+    let model: SettingsModel
+    @Environment(\.compactLayout) private var compact
+
+    var body: some View {
+        let latency = model.latency
+        let typical = latency.percentile(50)
+        let slow = latency.percentile(95)
+        let layout = adaptiveLayout(compact: compact, spacing: 18)
+        SettingsCard(
+            title: "Speed",
+            footer: "Time from pressing Tab to the switcher on screen, after the show delay. One frame on \(model.displayName) is \(String(format: "%.1f", model.frameMilliseconds))ms, the fastest any app can appear."
+        ) {
+            layout {
+                VStack(alignment: .leading, spacing: 4) {
+                    if let typical, let slow {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(LatencyStats.milliseconds(typical))
+                                .font(.system(size: 32, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
+                            verdict(for: typical)
+                        }
+                        Text(spreadText(count: latency.count, slow: slow))
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text("Not measured yet")
+                            .font(.title3.weight(.semibold))
+                        Text("Hold Cmd+Tab a few times to see how fast the switcher appears.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if !compact { Spacer(minLength: 8) }
+                if latency.count > 0 {
+                    LatencyBars(samples: latency.chronological, frameMilliseconds: model.frameMilliseconds)
+                        .frame(height: 46)
+                        .frame(maxWidth: compact ? .infinity : 220)
+                }
+            }
+            .padding(Card.inset)
+        }
+    }
 
     /// With few samples the 95th percentile is just the slowest one, so it is called that.
-    private var spreadText: String {
-        let count = model.latency.count
-        guard let slow = model.latency.percentile(95) else { return "" }
+    private func spreadText(count: Int, slow: UInt64) -> String {
         let switches = count == 1 ? "1 switch" : "\(count) switches"
         return count < 20
             ? "Typical. Slowest of \(switches): \(LatencyStats.milliseconds(slow))."

@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Created on open and released on close. While open, InstantTab is a regular app so Cmd+Tab reaches it.
+/// The window and its model exist only while open. Meanwhile InstantTab is a regular app so Cmd+Tab reaches it.
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let makeModel: () -> SettingsModel
@@ -45,6 +45,16 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
                 if !NSApp.isActive || !window.isKeyWindow { OwnWindow.bringForward(window) }
             }
         }
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        model?.refreshSystemState()
+    }
+
+    /// Nothing refreshes while the window is minimized, hidden or covered.
+    func windowDidChangeOcclusionState(_ notification: Notification) {
+        guard let window, let model else { return }
+        if window.occlusionState.contains(.visible) { model.start() } else { model.stop() }
     }
 
     func windowWillClose(_ notification: Notification) {

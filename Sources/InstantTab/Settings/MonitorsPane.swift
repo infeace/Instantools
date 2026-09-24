@@ -9,60 +9,59 @@ struct MonitorsPane: View {
         PaneScroll { compact in
             PaneHeader(pane: .monitors, subtitle: "Choose which monitors Cmd+Tab lists apps from.")
             FileProblemBanner(configStore: model.configStore)
-            arrangement(compact: compact)
+            Hero {
+                DisplayArrangement(model: model)
+            } bar: {
+                StatusBar(
+                    title: "Cmd+Tab lists apps from \(currentTargetNames)",
+                    subtitle: compact ? nil : "Highlighted monitors are listed. The pointer marks the one under the mouse."
+                ) {
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.35))
+                        .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(Color.accentColor, lineWidth: 1.5))
+                        .frame(width: 18, height: 13)
+                }
+            }
             Group {
                 scope
                 groups
             }
             .disabled(model.configStore.fileIsBroken)
         }
-        .navigationTitle("Monitors")
         .sheet(item: $editing) { draft in
             GroupEditor(
                 draft: draft,
                 displays: model.displays,
                 takenNames: Set(model.groups.map(\.name)).subtracting([draft.originalName].compactMap { $0 }),
+                canSave: !model.configStore.fileIsBroken,
                 save: { group in model.saveGroup(group, replacing: draft.originalName) }
             )
         }
     }
 
-    private func arrangement(compact: Bool) -> some View {
-        VStack(spacing: 12) {
-            DisplayArrangement(model: model)
-                .frame(height: compact ? 170 : 210)
-            StatusBar(
-                title: "Cmd+Tab lists apps from \(currentTargetNames)",
-                subtitle: compact ? nil : "Highlighted monitors are listed. The pointer marks the one under the mouse."
-            ) {
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.35))
-                    .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(Color.accentColor, lineWidth: 1.5))
-                    .frame(width: 18, height: 13)
-            } trailing: {
-                EmptyView()
-            }
-        }
-        .padding(12)
-        .background(Wallpaper())
-        .clipShape(Hero.shape)
-        .overlay(Hero.shape.strokeBorder(Card.stroke))
-    }
-
     private var scope: some View {
-        let selected = model.configStore.config.scope
+        let selection = model.binding(\.scope)
         return SettingsCard(title: "Show apps from") {
-            ForEach(Array(model.scopeOptions.enumerated()), id: \.element) { index, option in
-                if index > 0 { RowDivider() }
-                let groupExists = model.groups.contains { $0.name == option.groupName }
-                ScopeRow(
-                    title: option.title(groupExists: groupExists),
-                    subtitle: option.explanation,
-                    symbol: option.groupName == nil ? option.symbol : groupExists ? "circle.fill" : "exclamationmark.triangle",
-                    tint: option.groupName.flatMap { groupExists ? model.color(ofGroup: $0) : nil },
-                    isSelected: option == selected,
-                    select: { model.binding(\.scope).wrappedValue = option }
-                )
+            VStack(spacing: 0) {
+                ForEach(Array(model.scopeOptions.enumerated()), id: \.element) { index, option in
+                    if index > 0 { RowDivider(indented: true) }
+                    let color = option.groupName.flatMap { name in model.groups.contains { $0.name == name } ? model.color(ofGroup: name) : nil }
+                    ScopeRow(
+                        option: option,
+                        groupColor: color,
+                        isSelected: option == selection.wrappedValue,
+                        select: { selection.wrappedValue = option }
+                    )
+                }
+            }
+            // VoiceOver reads the rows as one radio group, as it did the old picker.
+            .accessibilityRepresentation {
+                Picker("Show apps from", selection: selection) {
+                    ForEach(model.scopeOptions, id: \.self) { option in
+                        Text(option.title(groupExists: model.groups.contains { $0.name == option.groupName })).tag(option)
+                    }
+                }
+                .pickerStyle(.radioGroup)
             }
         }
     }
@@ -72,26 +71,20 @@ struct MonitorsPane: View {
             title: "Monitor groups",
             footer: "A group combines monitors, for example every external one. It matches by kind, shape or position, so it keeps working when you swap monitors."
         ) {
-            if model.groups.isEmpty {
-                EmptyRow(text: "No groups yet.")
-                RowDivider()
-            } else {
-                ForEach(model.groups, id: \.name) { group in
-                    GroupRow(
-                        group: group,
-                        color: model.color(ofGroup: group.name),
-                        members: memberNames(group),
-                        edit: { editing = GroupDraft(group: group, originalName: group.name) },
-                        delete: { model.deleteGroup(group.name) }
-                    )
-                    RowDivider()
-                }
+            if model.groups.isEmpty { EmptyRow(text: "No groups yet.") }
+            ForEach(Array(model.groups.enumerated()), id: \.element.name) { index, group in
+                if index > 0 { RowDivider(indented: true) }
+                GroupRow(
+                    group: group,
+                    color: model.color(ofGroup: group.name),
+                    members: model.displays.names(of: model.members(of: group)),
+                    edit: { editing = GroupDraft(group: group, originalName: group.name) },
+                    delete: { model.deleteGroup(group.name) }
+                )
             }
             CardActions {
-                Button {
+                Button("New Group…") {
                     editing = GroupDraft(group: DisplayGroup(name: model.newGroupName(), rules: []), originalName: nil)
-                } label: {
-                    Label("New Group…", systemImage: "plus")
                 }
             }
         }
@@ -99,28 +92,28 @@ struct MonitorsPane: View {
 
     private var currentTargetNames: String {
         guard let targets = model.currentTargets else { return "all monitors" }
-        return model.displayNames(targets, empty: "all monitors")
-    }
-
-    private func memberNames(_ group: DisplayGroup) -> String {
-        model.displayNames(group.members(in: model.displays), empty: "No monitor connected")
+        return model.displays.names(of: targets)
     }
 }
 
 private struct ScopeRow: View {
-    let title: String
-    let subtitle: String
-    let symbol: String
-    let tint: Color?
+    let option: Config.Scope
+    /// Nil for the built-in scopes and for a group that no longer exists.
+    let groupColor: Color?
     let isSelected: Bool
     let select: () -> Void
 
     var body: some View {
+        let groupExists = option.groupName == nil || groupColor != nil
         Button(action: select) {
-            SettingsRow(title: title, subtitle: subtitle) {
-                Image(systemName: symbol)
-                    .font(.system(size: tint == nil ? 15 : 10, weight: .medium))
-                    .foregroundStyle(tint ?? (isSelected ? Color.accentColor : Color.secondary))
+            SettingsRow(title: option.title(groupExists: groupExists), subtitle: option.explanation(groupExists: groupExists)) {
+                if let groupColor {
+                    GroupDot(color: groupColor)
+                } else {
+                    Image(systemName: option.symbol)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(!groupExists ? Color.orange : isSelected ? Color.accentColor : Color.secondary)
+                }
             } trailing: {
                 Image(systemName: "checkmark")
                     .font(.body.weight(.semibold))
@@ -132,7 +125,6 @@ private struct ScopeRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -211,7 +203,7 @@ private struct DisplayTile: View {
             .overlay(alignment: .topLeading) {
                 HStack(spacing: 3) {
                     ForEach(Array(groupColors.enumerated()), id: \.offset) { _, color in
-                        Circle().fill(color).frame(width: 8, height: 8)
+                        GroupDot(color: color, size: 8)
                     }
                 }
                 .padding(7)
@@ -255,11 +247,12 @@ private struct GroupRow: View {
             title: group.name,
             subtitle: "\(group.rules.isEmpty ? "No rules yet" : "Matches \(DisplayRule.summary(of: group.rules))")\nNow: \(members)"
         ) {
-            Circle().fill(color).frame(width: 10, height: 10)
+            GroupDot(color: color)
         } trailing: {
             HStack(spacing: 8) {
                 Button("Edit…", action: edit)
                     .glassButton()
+                    .accessibilityLabel("Edit \(group.name)")
                 RemoveButton(help: "Delete \(group.name)", action: delete)
             }
         }
@@ -275,19 +268,19 @@ struct GroupDraft: Identifiable {
 struct GroupEditor: View {
     let displays: [Display]
     let takenNames: Set<String>
+    let canSave: Bool
     let save: (DisplayGroup) -> Void
     @State private var group: DisplayGroup
     @State private var namePatterns: String
     @Environment(\.dismiss) private var dismiss
 
-    init(draft: GroupDraft, displays: [Display], takenNames: Set<String>, save: @escaping (DisplayGroup) -> Void) {
+    init(draft: GroupDraft, displays: [Display], takenNames: Set<String>, canSave: Bool, save: @escaping (DisplayGroup) -> Void) {
         self.displays = displays
         self.takenNames = takenNames
+        self.canSave = canSave
         self.save = save
         _group = State(initialValue: draft.group)
-        _namePatterns = State(initialValue: draft.group.rules.compactMap { rule in
-            if case .name(let pattern) = rule { pattern } else { nil }
-        }.joined(separator: ", "))
+        _namePatterns = State(initialValue: draft.group.rules.compactMap(\.pattern).joined(separator: ", "))
     }
 
     var body: some View {
@@ -301,7 +294,7 @@ struct GroupEditor: View {
                             .multilineTextAlignment(.trailing)
                     }
                 } footer: {
-                    if let problem = nameProblem {
+                    if let problem = saveProblem {
                         Text(problem).foregroundStyle(.red)
                     }
                 }
@@ -372,16 +365,17 @@ struct GroupEditor: View {
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(nameProblem != nil)
+                .disabled(saveProblem != nil)
             }
             .padding(16)
         }
-        .frame(width: 520, height: 560)
+        .frame(width: 520, height: 620)
     }
 
     private var trimmedName: String { group.name.trimmingCharacters(in: .whitespaces) }
 
-    private var nameProblem: String? {
+    private var saveProblem: String? {
+        if !canSave { return "The settings file has an error, so changes cannot be saved until it is fixed." }
         if trimmedName.isEmpty { return "A group needs a name." }
         if takenNames.contains(trimmedName) { return "Another group already has this name." }
         return nil
@@ -390,14 +384,12 @@ struct GroupEditor: View {
     private var finished: DisplayGroup {
         let patterns = namePatterns.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         let keywords = DisplayRule.keywords.filter(group.rules.contains)
-        let uuids = group.rules.filter { if case .uuid = $0 { true } else { false } }
+        let uuids = group.rules.filter { $0.uuid != nil }
         return DisplayGroup(name: trimmedName, rules: keywords + uuids + patterns.map(DisplayRule.name))
     }
 
     private var matchesNow: String {
-        let members = finished.members(in: displays)
-        let names = displays.filter { members.contains($0.id) }.map(\.name)
-        return names.isEmpty ? "No connected monitor" : names.formatted(.list(type: .and))
+        displays.names(of: finished.members(in: displays))
     }
 
     /// Uuids compare case-insensitively, as the matcher does.
@@ -408,9 +400,7 @@ struct GroupEditor: View {
 
     private var disconnectedUUIDs: [String] {
         let connected = Set(displays.map { $0.uuid.lowercased() })
-        return group.rules.compactMap { rule in
-            if case .uuid(let uuid) = rule, !connected.contains(uuid.lowercased()) { uuid } else { nil }
-        }
+        return group.rules.compactMap(\.uuid).filter { !connected.contains($0.lowercased()) }
     }
 
     private func check(_ title: String, _ rule: DisplayRule) -> some View {
@@ -432,13 +422,14 @@ struct GroupEditor: View {
 }
 
 extension Config.Scope {
+    /// A group that exists shows its color instead, so `.group` only draws for a missing one.
     var symbol: String {
         switch self {
         case .all: "square.grid.2x2"
         case .mouseDisplay: "cursorarrow"
         case .focusedDisplay: "macwindow"
         case .mouseGroup: "cursorarrow.rays"
-        case .group: "circle.fill"
+        case .group: "exclamationmark.triangle"
         }
     }
 
@@ -452,17 +443,18 @@ extension Config.Scope {
         case .mouseDisplay: "The monitor under the mouse"
         case .focusedDisplay: "The monitor with the focused window"
         case .mouseGroup: "The group the mouse is in"
-        case .group(let name): groupExists ? "Group: \(name)" : "Group: \(name) (deleted)"
+        case .group(let name): groupExists ? "Group: \(name)" : "Group: \(name) (missing)"
         }
     }
 
-    var explanation: String {
+    func explanation(groupExists: Bool) -> String {
         switch self {
         case .all: "Every running app, like native Cmd+Tab."
         case .mouseDisplay: "Apps with a window on the monitor under the mouse."
         case .focusedDisplay: "Apps with a window on the monitor you are working on."
         case .mouseGroup: "Apps on every monitor of the first group that contains the monitor under the mouse. Outside any group, just that monitor."
-        case .group(let name): "Apps on the monitors in \(name), wherever the mouse is."
+        case .group(let name):
+            groupExists ? "Apps on the monitors in \(name), wherever the mouse is." : "No group has this name, so apps from every monitor are listed."
         }
     }
 }
@@ -484,8 +476,18 @@ extension DisplayRule {
             case .uuid: nil
             }
         }
-        let specific = rules.filter { if case .uuid = $0 { true } else { false } }.count
+        let specific = rules.filter { $0.uuid != nil }.count
         if specific > 0 { parts.append(specific == 1 ? "one specific monitor" : "\(specific) specific monitors") }
         return parts.formatted(.list(type: .or))
+    }
+}
+
+extension DisplayRule {
+    var uuid: String? {
+        if case .uuid(let uuid) = self { uuid } else { nil }
+    }
+
+    var pattern: String? {
+        if case .name(let pattern) = self { pattern } else { nil }
     }
 }

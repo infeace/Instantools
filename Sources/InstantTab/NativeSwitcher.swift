@@ -5,12 +5,18 @@ import SkyLightShim
 /// Native Cmd+Tab stays off only while InstantTab handles it. The setting outlives the process, so it is
 /// restored on every way out: normal exit, termination signals, and crashes.
 enum NativeSwitcher {
-    static func disable() {
-        for hotKey in SymbolicHotKey.allCases { SkyLight.setEnabled(false, hotKey) }
+    /// False when macOS refused, for example because the private call no longer exists.
+    @discardableResult
+    static func disable() -> Bool {
+        set(enabled: false)
     }
 
     static func restore() {
-        for hotKey in SymbolicHotKey.allCases { SkyLight.setEnabled(true, hotKey) }
+        _ = set(enabled: true)
+    }
+
+    private static func set(enabled: Bool) -> Bool {
+        SymbolicHotKey.allCases.map { SkyLight.setEnabled(enabled, $0) }.allSatisfy { $0 }
     }
 
     nonisolated(unsafe) private static var signalSources: [DispatchSourceSignal] = []
@@ -22,6 +28,7 @@ enum NativeSwitcher {
         signal(SIGTSTP, SIG_IGN)
 
         for sig in [SIGTERM, SIGINT, SIGHUP, SIGQUIT] {
+            // Ignored first, so the default action does not kill the process before the source runs.
             signal(sig, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
             source.setEventHandler {
@@ -32,8 +39,8 @@ enum NativeSwitcher {
             signalSources.append(source)
         }
 
-        // Crash handlers run on their own stack so a stack overflow can still restore, then re-raise so
-        // the crash is reported.
+        // Crash handlers restore, then re-raise so the crash is reported. The alternate stack lets them run
+        // after a stack overflow on the main thread; sigaltstack is per thread.
         let stackSize = 64 * 1024
         var stack = stack_t(ss_sp: malloc(stackSize), ss_size: stackSize, ss_flags: 0)
         sigaltstack(&stack, nil)

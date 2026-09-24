@@ -90,7 +90,7 @@ final class InputTaps: @unchecked Sendable {
         }
         guard type == .keyDown, event.flags.contains(.maskCommand), sessionActive.withLock({ $0 }) else { return false }
         let keycode = event.getIntegerValueField(.keyboardEventKeycode)
-        guard keycode != 48 else { return false } // Tab belongs to the Carbon hotkeys.
+        guard keycode != KeyCode.tab else { return false } // Tab belongs to the Carbon hotkeys.
         var length = 0
         var buffer = [UniChar](repeating: 0, count: 4)
         event.keyboardGetUnicodeString(maxStringLength: buffer.count, actualStringLength: &length, unicodeString: &buffer)

@@ -3,12 +3,12 @@ public enum SwitcherFilter {
     public static func entries(
         for snapshot: Snapshot,
         config: Config,
+        exclusions: ExclusionMatcher,
         displays: [Display],
         targets: Set<UInt32>?
     ) -> [SwitcherEntry] {
         let windowsByPid = Dictionary(grouping: snapshot.windows, by: \.pid)
         let liveDisplays = Set(displays.map(\.id))
-        let exclusions = ExclusionMatcher(config.exclude)
 
         var listed: [SwitcherEntry] = []
         var trailing: [SwitcherEntry] = []

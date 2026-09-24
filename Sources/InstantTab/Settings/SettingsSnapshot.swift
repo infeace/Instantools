@@ -3,9 +3,8 @@ import InstantTabCore
 import SkyLightShim
 import SwiftUI
 
-/// `InstantTab --snapshot-settings <pane> <out.png> [light|dark] [--sample] [--narrow] [--no-access]`
-/// renders a Settings pane to a PNG and exits without touching Cmd+Tab, so UI changes can be checked
-/// without Screen Recording permission. Panes: general, monitors, exclusions, about, group-editor.
+/// Renders a Settings pane to a PNG and exits without touching Cmd+Tab. Capturing its own window needs no
+/// Screen Recording permission.
 @MainActor
 enum SettingsSnapshot {
     static func runIfRequested() {
@@ -52,6 +51,7 @@ enum SettingsSnapshot {
             },
             displays: { displays.displays },
             mouseDisplay: { displays.mouseDisplayId() },
+            focusedDisplay: { displays.mouseDisplayId() },
             accessibilityGranted: { !arguments.contains("--no-access") },
             recentApps: {
                 NSWorkspace.shared.runningApplications
@@ -64,7 +64,7 @@ enum SettingsSnapshot {
         } else {
             NSHostingView(rootView: GroupEditor(
                 draft: GroupDraft(group: DisplayGroup(name: "Desk", rules: [.external, .name("DELL*")]), originalName: "Desk"),
-                displays: displays.displays, takenNames: ["Laptop"], save: { _ in }
+                displays: displays.displays, takenNames: ["Laptop"], canSave: true, save: { _ in }
             ))
         }
         let window = NSWindow(

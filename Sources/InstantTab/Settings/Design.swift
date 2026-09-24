@@ -1,13 +1,10 @@
 import AppKit
 import SwiftUI
 
-// Native controls inside cards and rows with consistent spacing. Liquid Glass is used only where Apple
-// intends it, on controls floating above content, with a plain fallback before macOS 26.
-
 struct IconTile: View {
     let symbol: String
     let colors: [Color]
-    var size: CGFloat = 20
+    let size: CGFloat
 
     var body: some View {
         RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
@@ -24,16 +21,15 @@ struct IconTile: View {
 
 struct PaneIcon: View {
     let pane: SettingsPane
-    var size: CGFloat = 20
 
     var body: some View {
         if pane == .about {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
-                .frame(width: size * 1.2, height: size * 1.2)
-                .frame(width: size, height: size)
+                .frame(width: 24, height: 24)
+                .frame(width: 20, height: 20)
         } else {
-            IconTile(symbol: pane.symbol, colors: pane.colors, size: size)
+            IconTile(symbol: pane.symbol, colors: pane.colors, size: 20)
         }
     }
 }
@@ -53,11 +49,31 @@ struct PaneHeader: View {
     }
 }
 
+/// Measured once for the detail column, so panes do not re-render on every pixel of a resize.
+enum PaneWidth {
+    case narrow
+    case compact
+    case wide
+
+    init(_ width: CGFloat) {
+        self = width < 560 ? .narrow : width < 620 ? .compact : .wide
+    }
+}
+
+private struct PaneWidthKey: EnvironmentKey {
+    static let defaultValue = PaneWidth.wide
+}
+
 private struct CompactLayoutKey: EnvironmentKey {
     static let defaultValue = false
 }
 
 extension EnvironmentValues {
+    var paneWidth: PaneWidth {
+        get { self[PaneWidthKey.self] }
+        set { self[PaneWidthKey.self] = newValue }
+    }
+
     var compactLayout: Bool {
         get { self[CompactLayoutKey.self] }
         set { self[CompactLayoutKey.self] = newValue }
@@ -66,38 +82,36 @@ extension EnvironmentValues {
 
 struct PaneScroll<Content: View>: View {
     @ViewBuilder let content: (_ compact: Bool) -> Content
-    @State private var width: CGFloat = 700
+    @Environment(\.paneWidth) private var width
 
     var body: some View {
-        let compact = width < 620
+        let compact = width != .wide
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
                 content(compact)
             }
             .frame(maxWidth: 680, alignment: .leading)
-            .padding(.horizontal, width < 560 ? 18 : 30)
+            .padding(.horizontal, width == .narrow ? 18 : 30)
             .padding(.top, 12)
             .padding(.bottom, 32)
             .frame(maxWidth: .infinity)
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .environment(\.compactLayout, compact)
     }
 }
 
 struct SettingsCard<Content: View>: View {
-    var title: String?
+    let title: String
     var footer: String?
     @ViewBuilder let content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let title {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 4)
-            }
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
+                .accessibilityAddTraits(.isHeader)
             VStack(spacing: 0) {
                 content
             }
@@ -118,6 +132,10 @@ enum Card {
     static let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
     static let fill = Color.primary.opacity(0.04)
     static let stroke = Color.primary.opacity(0.07)
+    static let inset: CGFloat = 16
+    /// Where row text starts when the row has a leading icon.
+    static let textInset: CGFloat = inset + leadingWidth + 12
+    static let leadingWidth: CGFloat = 30
 }
 
 /// Beside or stacked, keeping the children's identity when the layout switches.
@@ -129,42 +147,48 @@ func adaptiveLayout(compact: Bool, spacing: CGFloat = 16) -> AnyLayout {
 
 struct SettingsRow<Leading: View, Trailing: View>: View {
     let title: String
-    var subtitle: String?
+    let subtitle: String
     @ViewBuilder let leading: Leading
     @ViewBuilder let trailing: Trailing
     @Environment(\.compactLayout) private var compact
 
-    private let leadingWidth: CGFloat = 30
     private var hasLeading: Bool { Leading.self != EmptyView.self }
 
     var body: some View {
         let layout = adaptiveLayout(compact: compact)
         layout {
             HStack(spacing: 12) {
-                if hasLeading { leading.frame(width: leadingWidth) }
+                if hasLeading { leading.frame(width: Card.leadingWidth) }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    Text(subtitle)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             if !compact { Spacer(minLength: 12) }
             // Stacked under the text, not under the icon.
-            trailing.padding(.leading, compact && hasLeading ? leadingWidth + 12 : 0)
+            trailing.padding(.leading, compact && hasLeading ? Card.textInset - Card.inset : 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Card.inset)
         .padding(.vertical, 12)
     }
 }
 
 extension SettingsRow where Leading == EmptyView {
-    init(title: String, subtitle: String? = nil, @ViewBuilder trailing: () -> Trailing) {
+    init(title: String, subtitle: String, @ViewBuilder trailing: () -> Trailing) {
         self.init(title: title, subtitle: subtitle, leading: { EmptyView() }, trailing: trailing)
+    }
+}
+
+/// Lines up with the row text, like System Settings.
+struct RowDivider: View {
+    var indented = false
+
+    var body: some View {
+        Divider().padding(.leading, indented ? Card.textInset : Card.inset)
     }
 }
 
@@ -176,23 +200,20 @@ struct EmptyRow: View {
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
+            .padding(Card.inset)
     }
 }
 
-/// The last row of a list card. The buttons wrap onto their own lines when the row is too narrow.
 struct CardActions<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) { content }
-            VStack(alignment: .leading, spacing: 8) { content }
-        }
-        .glassButton()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        RowDivider()
+        HStack(spacing: 8) { content }
+            .glassButton()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Card.inset)
+            .padding(.vertical, 12)
     }
 }
 
@@ -212,19 +233,31 @@ struct RemoveButton: View {
     }
 }
 
-/// A card that asks for one action.
+struct MessageRow: View {
+    let text: String
+    var isError = true
+
+    var body: some View {
+        Label(text, systemImage: isError ? "exclamationmark.triangle.fill" : "exclamationmark.triangle")
+            .foregroundStyle(isError ? .red : .orange)
+            .padding(.horizontal, Card.inset)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 struct Callout: View {
     let symbol: String
     let colors: [Color]
     let title: String
     let message: String
     let action: String
+    var prominent = true
     let perform: () -> Void
     @Environment(\.compactLayout) private var compact
 
     var body: some View {
         let layout = adaptiveLayout(compact: compact, spacing: 12)
-        let tint = colors.first ?? .accentColor
         HStack(alignment: compact ? .top : .center, spacing: 14) {
             IconTile(symbol: symbol, colors: colors, size: 34)
             layout {
@@ -238,22 +271,36 @@ struct Callout: View {
                 }
                 if !compact { Spacer(minLength: 0) }
                 Button(action, action: perform)
-                    .glassButton(prominent: true)
+                    .glassButton(prominent: prominent)
                     .controlSize(.large)
             }
         }
-        .padding(16)
+        .padding(Card.inset)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(0.08), in: Card.shape)
-        .overlay(Card.shape.strokeBorder(tint.opacity(0.3)))
+        .background(colors[0].opacity(0.08), in: Card.shape)
+        .overlay(Card.shape.strokeBorder(colors[0].opacity(0.3)))
     }
 }
 
-enum Hero {
-    static let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+/// Shown on every pane. A file that does not parse makes Settings read-only, so it is never overwritten.
+struct FileProblemBanner: View {
+    let configStore: ConfigStore
+
+    var body: some View {
+        if let error = configStore.error {
+            Callout(
+                symbol: "exclamationmark.triangle.fill",
+                colors: [.red, Color(red: 0.8, green: 0.1, blue: 0.15)],
+                title: configStore.fileIsBroken ? "The settings file has an error" : "Settings could not be saved",
+                message: configStore.fileIsBroken ? "Changes here are paused until it is fixed. \(error)" : error,
+                action: "Open File",
+                prominent: false,
+                perform: configStore.openInEditor
+            )
+        }
+    }
 }
 
-/// The desktop the hero previews sit on.
 struct Wallpaper: View {
     @Environment(\.colorScheme) private var colorScheme
 
@@ -271,7 +318,24 @@ struct Wallpaper: View {
     }
 }
 
-/// Floats on a hero. Stays on one or two lines so the hero keeps its height.
+struct Hero<Picture: View, Bar: View>: View {
+    @ViewBuilder let picture: Picture
+    @ViewBuilder let bar: Bar
+    @Environment(\.compactLayout) private var compact
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        VStack(spacing: 12) {
+            picture.frame(height: compact ? 170 : 200)
+            bar
+        }
+        .padding(12)
+        .background(Wallpaper())
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(Card.stroke))
+    }
+}
+
 struct StatusBar<Leading: View, Trailing: View>: View {
     let title: String
     var subtitle: String?
@@ -284,68 +348,26 @@ struct StatusBar<Leading: View, Trailing: View>: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.headline)
-                    .lineLimit(1)
+                    .lineLimit(2)
                 if let subtitle {
                     Text(subtitle)
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(2)
                 }
             }
             Spacer(minLength: 8)
             trailing
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Card.inset)
         .padding(.vertical, 11)
         .glassPanel(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
-struct RowDivider: View {
-    var body: some View {
-        Divider().padding(.leading, 16)
-    }
-}
-
-struct MessageRow: View {
-    let text: String
-    var isError = true
-
-    var body: some View {
-        Label(text, systemImage: isError ? "exclamationmark.triangle.fill" : "exclamationmark.triangle")
-            .foregroundStyle(isError ? .red : .orange)
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-/// Settings is read-only while the file does not parse, so the file is never overwritten.
-struct FileProblemBanner: View {
-    let configStore: ConfigStore
-
-    var body: some View {
-        if configStore.fileIsBroken, let error = configStore.error {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.title3)
-                    .foregroundStyle(.red)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("The settings file has an error")
-                        .font(.headline)
-                    Text("Changes here are paused until it is fixed, so your file is never overwritten. \(error)")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button("Open File") { configStore.openInEditor() }
-                        .glassButton()
-                        .padding(.top, 4)
-                }
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.red.opacity(0.08), in: Card.shape)
-            .overlay(Card.shape.strokeBorder(Color.red.opacity(0.3)))
-        }
+extension StatusBar where Trailing == EmptyView {
+    init(title: String, subtitle: String?, @ViewBuilder leading: () -> Leading) {
+        self.init(title: title, subtitle: subtitle, leading: leading, trailing: { EmptyView() })
     }
 }
 
@@ -357,6 +379,15 @@ struct StatusDot: View {
             .fill(color)
             .frame(width: 8, height: 8)
             .shadow(color: color.opacity(0.6), radius: 3)
+    }
+}
+
+struct GroupDot: View {
+    let color: Color
+    var size: CGFloat = 10
+
+    var body: some View {
+        Circle().fill(color).frame(width: size, height: size)
     }
 }
 

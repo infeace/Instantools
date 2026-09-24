@@ -32,8 +32,9 @@ extension SkyLight {
         return true
     }
 
-    /// A synthetic mouse-down (layout from CGSInternal's CGSEvent.h), aimed far past the window so nothing is
-    /// clicked. The buffer is 0x100 bytes for a 0xf8 record because WindowServer reads past it since 14.7.4.
+    /// A synthetic click, mouse-down then mouse-up (layout from CGSInternal's CGSEvent.h), aimed far past the
+    /// window so nothing is clicked. The buffer is 0x100 bytes for a 0xf8 record because WindowServer reads
+    /// past it since 14.7.4.
     private static func makeKeyWindow(_ psn: inout ProcessSerialNumber, _ windowId: CGWindowID) {
         guard let postEventRecordTo else { return }
         var bytes = [UInt8](repeating: 0, count: 0x100)
@@ -44,6 +45,8 @@ extension SkyLight {
         var id = windowId
         withUnsafeBytes(of: &point) { bytes.replaceSubrange(0x20..<0x30, with: $0) }
         withUnsafeBytes(of: &id) { bytes.replaceSubrange(0x3c..<0x40, with: $0) }
+        _ = bytes.withUnsafeMutableBufferPointer { postEventRecordTo(&psn, $0.baseAddress!) }
+        bytes[0x08] = 0x02 // kCGEventLeftMouseUp, or the app is left thinking the button is down
         _ = bytes.withUnsafeMutableBufferPointer { postEventRecordTo(&psn, $0.baseAddress!) }
     }
 

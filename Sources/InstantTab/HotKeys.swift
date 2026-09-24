@@ -1,7 +1,7 @@
 import Carbon.HIToolbox
 
-/// Carbon hotkeys for Cmd+Tab and Cmd+Shift+Tab. They need no permission, keep working under Secure
-/// Input, and win over the frontmost app once the native symbolic hotkeys are off.
+/// Carbon hotkeys need no permission, keep working under Secure Input, and win over the frontmost app once
+/// the native symbolic hotkeys are off.
 @MainActor
 final class HotKeys {
     enum Action: UInt32 {

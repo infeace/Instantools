@@ -55,6 +55,7 @@ enum LoginItem {
             "RunAtLoad": true,
             // Relaunch after a crash, not after quitting.
             "KeepAlive": ["SuccessfulExit": false],
+            // Without it, launchd applies background resource limits.
             "ProcessType": "Interactive",
             "LimitLoadToSessionType": "Aqua",
         ]

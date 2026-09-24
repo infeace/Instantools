@@ -39,7 +39,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 
 struct SettingsView: View {
     let model: SettingsModel
-    @State private var selection: SettingsPane?
+    @State private var selection: SettingsPane
+    @State private var width = PaneWidth.wide
 
     init(model: SettingsModel, initialPane: SettingsPane = .general) {
         self.model = model
@@ -48,7 +49,8 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $selection) {
+            // Clicking empty sidebar space would otherwise clear the selection.
+            List(selection: Binding(get: { selection }, set: { if let pane = $0 { selection = pane } })) {
                 Section {
                     ForEach(SettingsPane.allCases.filter { $0 != .about }) { pane in
                         row(pane)
@@ -65,12 +67,17 @@ struct SettingsView: View {
             .toolbar(removing: .sidebarToggle)
             .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
         } detail: {
-            switch selection ?? .general {
-            case .general: GeneralPane(model: model)
-            case .monitors: MonitorsPane(model: model)
-            case .exclusions: ExclusionsPane(model: model)
-            case .about: AboutPane(model: model)
+            Group {
+                switch selection {
+                case .general: GeneralPane(model: model)
+                case .monitors: MonitorsPane(model: model)
+                case .exclusions: ExclusionsPane(model: model)
+                case .about: AboutPane(model: model)
+                }
             }
+            .onGeometryChange(for: PaneWidth.self) { PaneWidth($0.size.width) } action: { width = $0 }
+            .environment(\.paneWidth, width)
+            .navigationTitle(selection.title)
         }
         .modernToolbar()
     }
@@ -113,6 +120,7 @@ private struct SidebarHeader: View {
 }
 
 struct ValueSlider: View {
+    let label: String
     @Binding var value: Double
     let range: ClosedRange<Double>
     let step: Double
@@ -121,8 +129,11 @@ struct ValueSlider: View {
     var body: some View {
         HStack(spacing: 12) {
             // Rounded here because `step:` draws a tick mark per step.
-            Slider(value: Binding(get: { value }, set: { value = ($0 / step).rounded() * step }), in: range)
-                .frame(minWidth: 150, maxWidth: 210)
+            Slider(value: Binding(get: { value }, set: { value = ($0 / step).rounded() * step }), in: range) {
+                Text(label)
+            }
+            .labelsHidden()
+            .frame(minWidth: 150, maxWidth: 210)
             Text(verbatim: "\(Int(value)) \(unit)")
                 .monospacedDigit()
                 .foregroundStyle(.secondary)

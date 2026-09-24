@@ -60,7 +60,6 @@ public enum DisplayRule: Sendable, Hashable {
     }
 }
 
-/// A display is in the group when it matches any of the rules.
 public struct DisplayGroup: Sendable, Equatable {
     public var name: String
     public var rules: [DisplayRule]

@@ -8,7 +8,6 @@ final class Focuser: Sendable {
     /// Raising talks to the target app and can stall, so it never holds up the next focus.
     private let raiseQueue = DispatchQueue(label: "com.infeace.InstantTab.raise", qos: .userInteractive, attributes: .concurrent)
     private let generation = OSAllocatedUnfairLock(initialState: 0)
-    private let ownPid = ProcessInfo.processInfo.processIdentifier
 
     func focus(_ entry: SwitcherEntry) {
         let token = generation.withLock { value in
@@ -27,9 +26,10 @@ final class Focuser: Sendable {
     }
 
     @MainActor private static func focusOwnWindow(_ windowId: UInt32?) {
+        if NSApp.isHidden { NSApp.unhide(nil) }
         let window = windowId.flatMap { NSApp.window(withWindowNumber: Int($0)) }
             ?? NSApp.windows.first { $0.isVisible && $0.canBecomeKey && $0.level == .normal }
-        if let window { OwnWindow.bringForward(window) } else { NSApp.activate() }
+        OwnWindow.bringForward(window)
     }
 
     private func isCurrent(_ token: Int) -> Bool {
@@ -43,7 +43,12 @@ final class Focuser: Sendable {
         // No visible window (windowless, minimized, or on another Space): activate like native, which
         // also switches to the app's Space.
         guard let windowId = entry.windowId else {
-            if !app.activate(options: .activateAllWindows) { SkyLight.focus(pid: entry.pid, windowId: 0) }
+            app.activate(options: .activateAllWindows)
+            // macOS can decline the activation and still report success, so check that it happened.
+            queue.asyncAfter(deadline: .now() + .milliseconds(150)) { [self] in
+                guard isCurrent(token), !app.isActive else { return }
+                SkyLight.focus(pid: entry.pid, windowId: 0)
+            }
             return
         }
         guard SkyLight.focus(pid: entry.pid, windowId: windowId) else {

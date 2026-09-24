@@ -18,26 +18,21 @@ struct ExclusionsPane: View {
                     title: "Excluded apps",
                     footer: "\"When it has no windows\" leaves an app out only while none of its windows are open, which suits apps like Finder."
                 ) {
-                    if rules.isEmpty {
-                        EmptyRow(text: "No excluded apps yet.")
-                        RowDivider()
-                    } else {
-                        ForEach(rules, id: \.bundleId) { rule in
-                            ExclusionRow(
-                                rule: rule,
-                                info: model.apps.info(for: rule.bundleId),
-                                when: model.exclusionWhen(rule.bundleId),
-                                remove: { model.removeExclusion(rule.bundleId) }
-                            )
-                            RowDivider()
-                        }
+                    if rules.isEmpty { EmptyRow(text: "No excluded apps yet.") }
+                    ForEach(Array(rules.enumerated()), id: \.element.bundleId) { index, rule in
+                        if index > 0 { RowDivider(indented: true) }
+                        ExclusionRow(
+                            rule: rule,
+                            info: model.apps.info(for: rule.bundleId),
+                            when: model.exclusionWhen(rule.bundleId),
+                            remove: { model.removeExclusion(rule.bundleId) }
+                        )
                     }
                     CardActions { addButtons }
                 }
             }
             .disabled(model.configStore.fileIsBroken)
         }
-        .navigationTitle("Excluded Apps")
     }
 
     @ViewBuilder private var addButtons: some View {
@@ -54,10 +49,9 @@ struct ExclusionsPane: View {
                 }
             }
         }
-        .menuStyle(.button)
         .fixedSize()
         .disabled(model.runningAppsToExclude.isEmpty)
-        Button("Choose App…") { model.chooseAppsToExclude() }
+        Button("Choose Apps…") { model.chooseAppsToExclude() }
         Button("Add by ID…") { addingBundleId = true }
             .popover(isPresented: $addingBundleId, arrowEdge: .bottom) { bundleIdPopover }
     }
@@ -69,7 +63,7 @@ struct ExclusionsPane: View {
         }
         return Callout(
             symbol: "square.and.arrow.down.fill",
-            colors: [Color(red: 0.33, green: 0.62, blue: 1), Color(red: 0.13, green: 0.42, blue: 0.93)],
+            colors: SettingsPane.monitors.colors,
             title: "Import from AltTab",
             message: "AltTab hides \(names.formatted(.list(type: .and))). Your current rules stay as they are.",
             action: "Import",
@@ -84,9 +78,9 @@ struct ExclusionsPane: View {
             TextField("com.example.App", text: $bundleIdText)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(addBundleId)
-            Text("End with * to match every app whose ID starts with the text before it.")
+            Text(bundleIdProblem ?? "End with * to match every app whose ID starts with the text before it.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(bundleIdProblem == nil ? .secondary : Color.orange)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Spacer()
@@ -94,7 +88,7 @@ struct ExclusionsPane: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Add", action: addBundleId)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(trimmedBundleId.isEmpty)
+                    .disabled(trimmedBundleId.isEmpty || bundleIdProblem != nil)
             }
         }
         .padding(14)
@@ -105,8 +99,14 @@ struct ExclusionsPane: View {
         bundleIdText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var bundleIdProblem: String? {
+        if trimmedBundleId == "*" { return "A lone * would hide every app." }
+        if model.configStore.config.excludes(trimmedBundleId) { return "This app is already excluded." }
+        return nil
+    }
+
     private func addBundleId() {
-        guard !trimmedBundleId.isEmpty else { return }
+        guard !trimmedBundleId.isEmpty, bundleIdProblem == nil else { return }
         model.exclude(trimmedBundleId)
         bundleIdText = ""
         addingBundleId = false
@@ -120,7 +120,7 @@ private struct ExclusionRow: View {
     let remove: () -> Void
 
     var body: some View {
-        SettingsRow(title: info.name, subtitle: info.isInstalled ? rule.bundleId : "\(rule.bundleId), not installed") {
+        SettingsRow(title: info.name, subtitle: info.isMissing ? "\(rule.bundleId), not installed" : rule.bundleId) {
             Group {
                 if let icon = info.icon {
                     Image(nsImage: icon).resizable()
@@ -130,10 +130,10 @@ private struct ExclusionRow: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(width: 30, height: 30)
+            .frame(height: 30)
         } trailing: {
             HStack(spacing: 8) {
-                Picker("Exclude", selection: when) {
+                Picker("Exclude \(info.name)", selection: when) {
                     Text("Always").tag(Config.Exclusion.When.always)
                     Text("When it has no windows").tag(Config.Exclusion.When.noWindows)
                 }

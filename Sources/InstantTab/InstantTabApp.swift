@@ -8,6 +8,7 @@ struct InstantTabApp {
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
+        // LSUIElement already does this in the bundle; this covers an unbundled `swift run`.
         app.setActivationPolicy(.accessory)
         withExtendedLifetime(delegate) { app.run() }
     }

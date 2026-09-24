@@ -83,6 +83,12 @@ struct ConfigTests {
         #expect(parsed.warnings == ["exclude lists 'COM.A' twice, the first rule is used"])
     }
 
+    @Test func loneWildcardIsIgnored() throws {
+        let parsed = try parse("{ exclude: [\"*\", \"com.a\"] }")
+        #expect(parsed.config.exclude == [.init(bundleId: "com.a")])
+        #expect(parsed.warnings == ["exclude '*' would hide every app, so it is ignored"])
+    }
+
     @Test func unknownKeysAreWarnings() throws {
         let parsed = try parse("{ scoep: \"all\", exclude: [{ bundleId: \"com.a\", wen: \"always\" }] }")
         #expect(parsed.warnings == ["unknown key 'scoep' ignored", "unknown key 'exclude[0].wen' ignored"])
@@ -118,12 +124,13 @@ struct ConfigTests {
             .init(bundleId: "com.parallels.*"),
             .init(bundleId: "com.apple.finder", when: .noWindows),
         ]
-        #expect(config.isExcluded(bundleId: "com.parallels.desktop", hasWindows: true))
-        #expect(!config.isExcluded(bundleId: "com.parallel", hasWindows: true))
-        #expect(config.isExcluded(bundleId: "com.apple.finder", hasWindows: false))
-        #expect(!config.isExcluded(bundleId: "com.apple.finder", hasWindows: true))
-        #expect(!config.isExcluded(bundleId: nil, hasWindows: false))
-        #expect(config.isExcluded(bundleId: "com.Apple.Finder", hasWindows: false))
-        #expect(config.isExcluded(bundleId: "COM.PARALLELS.desktop", hasWindows: true))
+        let matcher = ExclusionMatcher(config.exclude)
+        #expect(matcher.isExcluded(bundleId: "com.parallels.desktop", hasWindows: true))
+        #expect(!matcher.isExcluded(bundleId: "com.parallel", hasWindows: true))
+        #expect(matcher.isExcluded(bundleId: "com.apple.finder", hasWindows: false))
+        #expect(!matcher.isExcluded(bundleId: "com.apple.finder", hasWindows: true))
+        #expect(!matcher.isExcluded(bundleId: nil, hasWindows: false))
+        #expect(matcher.isExcluded(bundleId: "com.Apple.Finder", hasWindows: false))
+        #expect(matcher.isExcluded(bundleId: "COM.PARALLELS.desktop", hasWindows: true))
     }
 }

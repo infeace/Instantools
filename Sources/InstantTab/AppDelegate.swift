@@ -8,9 +8,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let displays = Displays()
     private let icons = IconCache()
     private lazy var tracker = WindowTracker(displays: displays)
-    private lazy var controller = SwitcherController(tracker: tracker, displays: displays, icons: icons)
+    private lazy var taps: InputTaps = InputTaps(
+        onCommandReleased: { [weak self] in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.controller.commandReleased() } }
+        },
+        onSessionKey: { [weak self] key in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.controller.sessionKey(key) } }
+        }
+    )
+    private lazy var controller: SwitcherController = SwitcherController(tracker: tracker, displays: displays, icons: icons, taps: taps)
     private let hotKeys = HotKeys()
-    private var taps: InputTaps?
     private var permissionPoll: Timer?
     private var statusItem: NSStatusItem?
     private var isPaused = false
@@ -22,8 +29,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 latency: { [unowned self] in controller.latency },
                 displays: { [unowned self] in displays.displays },
                 mouseDisplay: { [unowned self] in displays.mouseDisplayId() },
+                focusedDisplay: { [unowned self] in
+                    DisplayScope.focusedDisplay(
+                        in: tracker.snapshot, frontmostPid: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+                        displays: displays.displays
+                    )
+                },
                 accessibilityGranted: { Permissions.accessibility },
-                recentApps: { [unowned self] in previewApps() }
+                recentApps: { [unowned self] in controller.previewPids() }
             ))
         },
         onOpenChange: { [unowned self] in tracker.reload() }
@@ -35,7 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NativeSwitcher.installExitHandlers()
-        // A hung app must never hold up focusing.
+        // Raises run on their own queue, but a hung app would otherwise pin a thread for the 6s default.
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 0.5)
         Diagnostics.log.notice("launched \(Bundle.main.shortVersion, privacy: .public), SkyLight focus available: \(SkyLight.canFocusWindows)")
 
@@ -44,7 +57,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.controller.resolveGroups()
             self?.tracker.refreshWindows()
         }
-        configStore.onChange = { [weak self] config in self?.controller.config = config }
+        configStore.onChange = { [weak self] config in
+            self?.icons.setIconSize(config.iconSize)
+            self?.controller.config = config
+        }
         configStore.start()
         tracker.onChange = { [weak self] in
             guard let self else { return }
@@ -80,14 +96,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Native Cmd+Tab goes off only once the hotkeys are registered, so a failure never leaves the Mac
-    /// without one.
+    /// without one. If it cannot go off, it would win over the hotkeys, so InstantTab reports Paused.
     private func takeOver() -> Bool {
         guard hotKeys.register() else {
             NativeSwitcher.restore()
             Diagnostics.log.error("could not register Cmd+Tab, native switcher left on")
             return false
         }
-        NativeSwitcher.disable()
+        guard NativeSwitcher.disable() else {
+            hotKeys.unregister()
+            NativeSwitcher.restore()
+            Diagnostics.log.error("could not turn off native Cmd+Tab, native switcher left on")
+            return false
+        }
         return true
     }
 
@@ -103,38 +124,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func startTaps() {
-        let taps = InputTaps(
-            onCommandReleased: { [weak self] in
-                DispatchQueue.main.async { MainActor.assumeIsolated { self?.controller.commandReleased() } }
-            },
-            onSessionKey: { [weak self] key in
-                DispatchQueue.main.async { MainActor.assumeIsolated { self?.controller.sessionKey(key) } }
-            }
-        )
-        self.taps = taps
-        controller.attach(taps)
         if Permissions.accessibility, taps.start() { return }
 
         // Until Accessibility is granted, releases are caught by polling and the in-switcher keys do nothing.
         Permissions.requestAccessibility()
         permissionPoll = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard Permissions.accessibility, let self, self.taps?.start() == true else { return }
+                guard Permissions.accessibility, let self, self.taps.start() else { return }
                 self.permissionPoll?.invalidate()
                 self.permissionPoll = nil
                 Diagnostics.log.notice("accessibility granted, input taps running")
             }
         }
-    }
-
-    private func previewApps() -> [Int32] {
-        let own = ProcessInfo.processInfo.processIdentifier
-        let snapshot = tracker.snapshot
-        let withWindows = Set(snapshot.windows.map(\.pid))
-        let exclusions = ExclusionMatcher(configStore.config.exclude)
-        return snapshot.apps
-            .filter { $0.pid != own && !exclusions.isExcluded(bundleId: $0.bundleId, hasWindows: withWindows.contains($0.pid)) }
-            .map(\.pid)
     }
 
     private func makeStatusItem() -> NSStatusItem {
@@ -193,6 +194,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item("Paste", #selector(NSText.paste(_:)), "v"),
             item("Select All", #selector(NSText.selectAll(_:)), "a"),
         ])
+        submenu("View", [
+            // The split view handles it, so a sidebar dragged closed can always come back.
+            item("Show Sidebar", #selector(NSSplitViewController.toggleSidebar(_:)), "s", modifiers: [.command, .control]),
+        ])
         submenu("Window", [
             item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
             item("Close", #selector(NSWindow.performClose(_:)), "w"),
@@ -200,9 +205,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return main
     }
 
-    /// A nil target goes down the responder chain, which ends at NSApp.
-    private func item(_ title: String, _ selector: Selector, _ key: String = "", target: AnyObject? = nil) -> NSMenuItem {
+    private func item(
+        _ title: String, _ selector: Selector, _ key: String = "", modifiers: NSEvent.ModifierFlags = .command, target: AnyObject? = nil
+    ) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: selector, keyEquivalent: key)
+        item.keyEquivalentModifierMask = modifiers
         item.target = target
         return item
     }
@@ -217,5 +224,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func togglePause() {
         setPaused(!isPaused)
+    }
+}
+
+extension Bundle {
+    var shortVersion: String {
+        object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+    }
+
+    var buildNumber: String {
+        object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
     }
 }

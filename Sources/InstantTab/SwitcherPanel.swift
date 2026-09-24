@@ -24,7 +24,9 @@ final class SwitcherPanel {
     private var panelWidth: CGFloat = 0
     private var entries: [SwitcherEntry] = []
     private var isVisible = false
-    private var pressedIndex: Int?
+    private var selectedIndex = 0
+    /// A pid, since the list can change between mouse-down and mouse-up.
+    private var pressedPid: Int32?
 
     var onHover: ((Int) -> Void)?
     var onClick: ((Int) -> Void)?
@@ -97,7 +99,7 @@ final class SwitcherPanel {
         guard isVisible else { return }
         panel.orderOut(nil)
         isVisible = false
-        pressedIndex = nil
+        pressedPid = nil
     }
 
     /// Only real pointer movement selects, so a panel opening under a resting pointer keeps its selection.
@@ -106,13 +108,13 @@ final class SwitcherPanel {
         let index = index(at: point)
         switch type {
         case .mouseMoved:
-            if let index { onHover?(index) }
+            if let index, index != selectedIndex { onHover?(index) }
         case .leftMouseDown:
-            pressedIndex = index
+            pressedPid = index.map { entries[$0].pid }
             if let index { onHover?(index) }
         case .leftMouseUp:
-            defer { pressedIndex = nil }
-            if let index, index == pressedIndex { onClick?(index) }
+            defer { pressedPid = nil }
+            if let index, entries[index].pid == pressedPid { onClick?(index) }
         default:
             break
         }
@@ -184,6 +186,7 @@ final class SwitcherPanel {
 
     private func placeSelection(_ index: Int) {
         guard entries.indices.contains(index) else { return }
+        selectedIndex = index
         let x = Metrics.padding + CGFloat(index) * tileSize
         highlight.frame = CGRect(x: x, y: Metrics.padding + Metrics.nameHeight, width: tileSize, height: tileSize)
         let nameWidth = min(panelWidth - 2 * Metrics.padding, max(tileSize * 2.5, 160))

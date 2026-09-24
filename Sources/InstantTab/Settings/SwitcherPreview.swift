@@ -13,23 +13,19 @@ struct SwitcherPreview: View {
     let isActive: Bool
     @Environment(\.colorScheme) private var colorScheme
 
-    // SwitcherPanel.Metrics
+    // Mirrors SwitcherPanel's private metrics.
     private let padding: CGFloat = 14
-    private let inset: CGFloat = 10
     private let nameHeight: CGFloat = 26
-
-    var bottomInset: CGFloat = 0
 
     var body: some View {
         GeometryReader { geometry in
-            let shown = apps
-            let tile = CGFloat(iconSize) + 2 * inset
-            let panelWidth = 2 * padding + CGFloat(max(shown.count, 1)) * tile
+            let tile = CGFloat(iconSize) + 20
+            let inset = min(10, (tile * 0.1).rounded(.down))
+            let panelWidth = 2 * padding + CGFloat(max(apps.count, 1)) * tile
             let panelHeight = 2 * padding + tile + nameHeight
-            let area = CGSize(width: geometry.size.width, height: geometry.size.height - bottomInset)
-            let scale = max(0.1, min(1, (area.width - 40) / panelWidth, (area.height - 36) / panelHeight))
+            let scale = max(0.1, min(1, (geometry.size.width - 40) / panelWidth, (geometry.size.height - 16) / panelHeight))
             ZStack {
-                panel(shown, tile: tile)
+                panel(tile: tile, inset: inset)
                     .frame(width: panelWidth, height: panelHeight)
                     .scaleEffect(scale)
                     // scaleEffect does not change layout size, so reserve the scaled size explicitly.
@@ -44,23 +40,20 @@ struct SwitcherPreview: View {
                         .background(.regularMaterial, in: Capsule())
                 }
             }
-            .frame(width: area.width, height: area.height)
-            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
-        .background(Wallpaper())
-        .clipShape(Hero.shape)
     }
 
-    private func panel(_ shown: [PreviewApp], tile: CGFloat) -> some View {
+    private func panel(tile: CGFloat, inset: CGFloat) -> some View {
         let dark = colorScheme == .dark
-        let selected = shown.count > 1 ? 1 : 0
+        let selected = apps.count > 1 ? 1 : 0
         return VStack(spacing: 0) {
             HStack(spacing: 0) {
-                ForEach(Array(shown.enumerated()), id: \.element.id) { index, app in
+                ForEach(Array(apps.enumerated()), id: \.element.id) { index, app in
                     Image(nsImage: app.icon)
                         .resizable()
                         .interpolation(.high)
-                        .frame(width: CGFloat(iconSize), height: CGFloat(iconSize))
+                        .frame(width: tile - 2 * inset, height: tile - 2 * inset)
                         .padding(inset)
                         .background {
                             if index == selected {
@@ -70,8 +63,8 @@ struct SwitcherPreview: View {
                         }
                 }
             }
-            let rowWidth = CGFloat(shown.count) * tile
-            Text(shown.indices.contains(selected) ? shown[selected].name : "")
+            let rowWidth = CGFloat(apps.count) * tile
+            Text(apps.indices.contains(selected) ? apps[selected].name : "")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(dark ? .white : .black)
                 .lineLimit(1)

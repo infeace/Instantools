@@ -6,13 +6,17 @@ final class SwitcherController {
     private let tracker: WindowTracker
     private let displays: Displays
     private let panel: SwitcherPanel
+    private let taps: InputTaps
     private let focuser = Focuser()
-    private let probe = FrameProbe()
-    private var taps: InputTaps?
+    private let probe: FrameProbe
 
     var config = Config() {
-        didSet { resolveGroups() }
+        didSet {
+            exclusions = ExclusionMatcher(config.exclude)
+            resolveGroups()
+        }
     }
+    private var exclusions = ExclusionMatcher([])
     private var groups = ResolvedGroups([], displays: [])
     private var session: SwitcherSession?
     private var sessionDisplay: UInt32?
@@ -21,15 +25,16 @@ final class SwitcherController {
     private var showWork: DispatchWorkItem?
     private var releasePoll: Timer?
     private var lastChoice: (pid: Int32, previousFrontmost: Int32?, nanoseconds: UInt64)?
-    private let ownPid = ProcessInfo.processInfo.processIdentifier
 
     /// Key press to first frame of the panel, minus the show delay.
     private(set) var latency = LatencyStats()
 
-    init(tracker: WindowTracker, displays: Displays, icons: IconCache) {
+    init(tracker: WindowTracker, displays: Displays, icons: IconCache, taps: InputTaps) {
         self.tracker = tracker
         self.displays = displays
+        self.taps = taps
         panel = SwitcherPanel(icons: icons)
+        probe = FrameProbe(view: panel.view)
         panel.onHover = { [weak self] index in self?.changeSelection { $0.select(index) } }
         panel.onClick = { [weak self] index in
             self?.changeSelection { $0.select(index) }
@@ -39,10 +44,6 @@ final class SwitcherController {
             self?.latency.record(nanoseconds)
             Diagnostics.log.notice("press to frame \(LatencyStats.milliseconds(nanoseconds), privacy: .public)")
         }
-    }
-
-    func attach(_ taps: InputTaps) {
-        self.taps = taps
     }
 
     func resolveGroups() {
@@ -68,7 +69,7 @@ final class SwitcherController {
 
     func sessionKey(_ key: SessionKey) {
         guard let selected = session?.selected else { return }
-        // Nothing happens to an app you cannot see yet.
+        // A key pressed before the show delay has passed shows the panel, so nothing happens unseen.
         if key != .cancel { showNow() }
         switch key {
         case .cancel: end()
@@ -99,7 +100,7 @@ final class SwitcherController {
     }
 
     /// Like native Cmd+Tab, which never quits Finder. The app leaves the list once it has quit, or stays if it
-    /// asks to save first.
+    /// asks to save first. Both calls message the app, so they stay off the main thread.
     private func quit(_ pid: Int32) {
         guard pid != ownPid else {
             end()
@@ -139,8 +140,6 @@ final class SwitcherController {
         // A very quick tap can release Cmd before this runs: switch without drawing.
         guard CGEventSource.flagsState(.combinedSessionState).contains(.maskCommand) else { return commit() }
 
-        taps?.setSessionActive(true)
-        startReleasePoll()
         if config.showDelayMs == 0 {
             showPanel(measured: true)
         } else {
@@ -153,6 +152,9 @@ final class SwitcherController {
             showWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(config.showDelayMs), execute: work)
         }
+        // After the show, since enabling the tap is a WindowServer call. The poll covers a release in between.
+        taps.setSessionActive(true)
+        startReleasePoll()
         tracker.refreshWindows()
     }
 
@@ -169,7 +171,7 @@ final class SwitcherController {
     private func showPanel(measured: Bool) {
         guard let active = session, let screen = displays.screen(for: sessionDisplay) else { return }
         panel.show(entries: active.entries, selected: active.selectedIndex, on: screen, iconSize: config.iconSize)
-        if measured { probe.arm(view: panel.view, startNanoseconds: pressNanoseconds + UInt64(config.showDelayMs) * 1_000_000) }
+        if measured { probe.arm(startNanoseconds: pressNanoseconds + UInt64(config.showDelayMs) * 1_000_000) }
     }
 
     private func showNow() {
@@ -196,7 +198,7 @@ final class SwitcherController {
         releasePoll?.invalidate()
         releasePoll = nil
         panel.hide()
-        taps?.setSessionActive(false)
+        taps.setSessionActive(false)
     }
 
     /// Backstop for the modifier tap: catches a missed release, and works alone before permissions exist.
@@ -211,7 +213,14 @@ final class SwitcherController {
         releasePoll = timer
     }
 
+    /// What Cmd+Tab would list from every display, for the Settings preview.
+    func previewPids() -> [Int32] {
+        currentEntries(targets: nil).map(\.pid).filter { $0 != ownPid }
+    }
+
     private func currentEntries(targets: Set<UInt32>?) -> [SwitcherEntry] {
-        SwitcherFilter.entries(for: tracker.snapshot, config: config, displays: displays.displays, targets: targets)
+        SwitcherFilter.entries(
+            for: tracker.snapshot, config: config, exclusions: exclusions, displays: displays.displays, targets: targets
+        )
     }
 }

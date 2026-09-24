@@ -62,13 +62,13 @@ public struct Config: Sendable, Equatable {
 
     public init() {}
 
-    public func isExcluded(bundleId: String?, hasWindows: Bool) -> Bool {
-        ExclusionMatcher(exclude).isExcluded(bundleId: bundleId, hasWindows: hasWindows)
+    public func excludes(_ bundleId: String) -> Bool {
+        exclude.contains { $0.bundleId.caseInsensitiveCompare(bundleId) == .orderedSame }
     }
 }
 
-/// Exclusion rules with their patterns lowercased once, since matching runs for every app on every
-/// key press. Bundle ids are case-insensitive on macOS.
+/// Built once per config, so a key press only compares lowercased strings. Bundle ids are
+/// case-insensitive on macOS.
 public struct ExclusionMatcher: Sendable {
     private let rules: [(pattern: String, isPrefix: Bool, when: Config.Exclusion.When)]
 
@@ -110,7 +110,6 @@ extension Config {
     private static let knownExclusionKeys: Set = ["bundleId", "when"]
     private static let knownGroupKeys: Set = ["name", "match"]
 
-    /// Parses JSON5. Missing keys keep their defaults, unknown keys are warnings, invalid values are errors.
     public static func parse(_ data: Data) throws(ConfigError) -> Parsed {
         let object: Any
         do {
@@ -149,7 +148,11 @@ extension Config {
             guard let rules = value as? [Any] else { throw .invalid("exclude must be a list") }
             for (index, rule) in rules.enumerated() {
                 let parsed = try exclusion(rule, index: index, warnings: &warnings)
-                guard !config.exclude.contains(where: { $0.bundleId.lowercased() == parsed.bundleId.lowercased() }) else {
+                guard parsed.bundleId != "*" else {
+                    warnings.append("exclude '*' would hide every app, so it is ignored")
+                    continue
+                }
+                guard !config.excludes(parsed.bundleId) else {
                     warnings.append("exclude lists '\(parsed.bundleId)' twice, the first rule is used")
                     continue
                 }

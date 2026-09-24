@@ -1,6 +1,5 @@
 import AppKit
 
-/// The app icon's mark as a template image, so the menu bar tints it for light and dark.
 enum MenuBarIcon {
     static func make() -> NSImage {
         let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
