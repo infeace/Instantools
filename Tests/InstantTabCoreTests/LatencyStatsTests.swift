@@ -21,6 +21,9 @@ struct LatencyStatsTests {
         for value: UInt64 in [100, 1, 2, 3] { stats.record(value) }
         #expect(stats.count == 3)
         #expect(stats.percentile(100) == 3)
+        #expect(stats.chronological == [1, 2, 3])
+        stats.record(4)
+        #expect(stats.chronological == [2, 3, 4])
     }
 
     @Test func summaryFormatsMilliseconds() {

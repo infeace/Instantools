@@ -12,6 +12,11 @@ public struct LatencyStats: Sendable {
 
     public var count: Int { samples.count }
 
+    /// Samples oldest first.
+    public var chronological: [UInt64] {
+        samples.count < capacity ? samples : Array(samples[nextIndex...] + samples[..<nextIndex])
+    }
+
     public mutating func record(_ nanoseconds: UInt64) {
         if samples.count < capacity {
             samples.append(nanoseconds)
