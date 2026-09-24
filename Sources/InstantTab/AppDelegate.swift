@@ -14,6 +14,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var permissionPoll: Timer?
     private var statusItem: NSStatusItem?
     private var isPaused = false
+    private lazy var settings = SettingsWindowController(
+        makeModel: { [unowned self] in
+            SettingsModel(configStore: configStore, actions: .init(
+                isPaused: { [unowned self] in isPaused },
+                setPaused: { [unowned self] paused in setPaused(paused) },
+                latency: { [unowned self] in controller.latency }
+            ))
+        },
+        onOpenChange: { [unowned self] _ in tracker.reload() }
+    )
     /// Keeps App Nap from coalescing the show delay and release timers.
     private let activity = ProcessInfo.processInfo.beginActivity(
         options: .userInitiatedAllowingIdleSystemSleep, reason: "Cmd+Tab must respond instantly"
@@ -45,7 +55,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         activate()
         startTaps()
         controller.warmUp()
+        NSApp.mainMenu = makeMainMenu()
         statusItem = makeStatusItem()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        configStore.flush()
+    }
+
+    /// Reopening the app from Finder or Spotlight opens Settings.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        settings.show()
+        return false
     }
 
     // MARK: Takeover
@@ -63,6 +84,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func deactivate() {
         hotKeys.unregister()
         NativeSwitcher.restore()
+    }
+
+    private func setPaused(_ paused: Bool) {
+        guard paused != isPaused else { return }
+        isPaused = paused
+        paused ? deactivate() : activate()
     }
 
     private func startTaps() {
@@ -104,27 +131,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         menu.addItem(disabled("InstantTab \(Self.version)"))
-        menu.addItem(disabled("Draw time: \(controller.latency.summary)"))
         if !Permissions.accessibility {
             menu.addItem(action("Grant Accessibility…", #selector(openAccessibility)))
         }
         if let error = configStore.error {
-            menu.addItem(disabled("Config error: \(error)"))
-        } else if !configStore.warnings.isEmpty {
-            menu.addItem(disabled("Config: \(configStore.warnings.joined(separator: "; "))"))
+            menu.addItem(action("Config error: \(error)", #selector(openSettings)))
         }
         menu.addItem(.separator())
-        menu.addItem(action("Open Config File", #selector(openConfig)))
-        menu.addItem(action("Reload Config", #selector(reloadConfig)))
-        menu.addItem(.separator())
-        let login = action(LoginItem.needsApproval ? "Start at Login (approve in Settings)" : "Start at Login", #selector(toggleLogin))
-        login.state = LoginItem.isEnabled ? .on : .off
-        menu.addItem(login)
+        menu.addItem(action("Settings…", #selector(openSettings), key: ","))
         let pause = action("Pause (use native Cmd+Tab)", #selector(togglePause))
         pause.state = isPaused ? .on : .off
         menu.addItem(pause)
         menu.addItem(.separator())
         menu.addItem(action("Quit InstantTab", #selector(NSApplication.terminate(_:)), key: "q"))
+    }
+
+    /// Only visible while Settings is open, when InstantTab is a regular app.
+    private func makeMainMenu() -> NSMenu {
+        let main = NSMenu()
+        func submenu(_ title: String, _ items: [NSMenuItem]) {
+            let menu = NSMenu(title: title)
+            items.forEach(menu.addItem)
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.submenu = menu
+            main.addItem(item)
+        }
+        func item(_ title: String, _ selector: Selector, _ key: String = "", target: AnyObject? = nil) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: selector, keyEquivalent: key)
+            item.target = target
+            return item
+        }
+        submenu("InstantTab", [
+            item("About InstantTab", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+            .separator(),
+            item("Settings…", #selector(openSettings), ",", target: self),
+            .separator(),
+            item("Hide InstantTab", #selector(NSApplication.hide(_:)), "h"),
+            item("Quit InstantTab", #selector(NSApplication.terminate(_:)), "q"),
+        ])
+        submenu("Edit", [
+            item("Undo", Selector(("undo:")), "z"),
+            item("Redo", Selector(("redo:")), "Z"),
+            .separator(),
+            item("Cut", #selector(NSText.cut(_:)), "x"),
+            item("Copy", #selector(NSText.copy(_:)), "c"),
+            item("Paste", #selector(NSText.paste(_:)), "v"),
+            item("Select All", #selector(NSText.selectAll(_:)), "a"),
+        ])
+        submenu("Window", [
+            item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
+            item("Close", #selector(NSWindow.performClose(_:)), "w"),
+        ])
+        return main
     }
 
     private func disabled(_ title: String) -> NSMenuItem {
@@ -144,29 +202,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Permissions.openAccessibilitySettings()
     }
 
-    @objc private func openConfig() {
-        NSWorkspace.shared.open(ConfigStore.fileURL)
-    }
-
-    @objc private func reloadConfig() {
-        configStore.load()
-    }
-
-    @objc private func toggleLogin() {
-        do {
-            try LoginItem.setEnabled(!LoginItem.isEnabled)
-            if LoginItem.needsApproval { LoginItem.openSettings() }
-        } catch {
-            Diagnostics.log.error("login item: \(error.localizedDescription, privacy: .public)")
-            let alert = NSAlert(error: error)
-            alert.messageText = "Could not change Start at Login"
-            alert.runModal()
-        }
+    @objc private func openSettings() {
+        settings.show()
     }
 
     @objc private func togglePause() {
-        isPaused.toggle()
-        isPaused ? deactivate() : activate()
+        setPaused(!isPaused)
     }
 
     private static var version: String {

@@ -3,6 +3,7 @@ import AppKit
 @main
 struct InstantTabApp {
     @MainActor static func main() {
+        SettingsSnapshot.runIfRequested()
         ensureSingleInstance()
         let app = NSApplication.shared
         let delegate = AppDelegate()

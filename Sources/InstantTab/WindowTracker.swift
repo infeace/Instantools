@@ -18,7 +18,6 @@ final class WindowTracker {
     private var refreshInFlight = false
     private var refreshPending = false
     private var appsObservation: NSKeyValueObservation?
-    private let ownPid = ProcessInfo.processInfo.processIdentifier
 
     init(displays: Displays) {
         self.displays = displays
@@ -26,7 +25,7 @@ final class WindowTracker {
 
     func start() {
         reloadApps()
-        windows = Self.queryWindows(excluding: ownPid)
+        windows = Self.queryWindows()
         seedOrder()
         publish()
 
@@ -64,6 +63,12 @@ final class WindowTracker {
         }
     }
 
+    /// Re-reads apps and windows, for changes the workspace does not announce (such as activation policy).
+    func reload() {
+        reloadApps()
+        refreshWindows()
+    }
+
     /// Moves an app to the front of the order as soon as it is chosen, so a quick second Cmd+Tab
     /// toggles back even before macOS reports the activation.
     func noteChosen(_ pid: Int32) {
@@ -78,9 +83,8 @@ final class WindowTracker {
             return
         }
         refreshInFlight = true
-        let ownPid = ownPid
         queue.async {
-            let windows = Self.queryWindows(excluding: ownPid)
+            let windows = Self.queryWindows()
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     self.refreshInFlight = false
@@ -99,7 +103,8 @@ final class WindowTracker {
     private func reloadApps() {
         var apps: [Int32: RunningApp] = [:]
         var live: [Int32] = []
-        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular && app.processIdentifier != ownPid {
+        // InstantTab itself is listed only while Settings is open, which makes it a regular app.
+        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
             let pid = app.processIdentifier
             apps[pid] = RunningApp(
                 pid: pid, bundleId: app.bundleIdentifier,
@@ -142,12 +147,13 @@ final class WindowTracker {
     }
 
     /// On-screen, normal-level windows front to back. About 1ms; never called on the key press path.
-    nonisolated private static func queryWindows(excluding ownPid: Int32) -> [WindowRecord] {
+    /// The switcher panel is above normal level, so it never lists itself.
+    nonisolated private static func queryWindows() -> [WindowRecord] {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]] else { return [] }
         return list.compactMap { info in
             guard (info[kCGWindowLayer as String] as? Int) == 0,
-                  let pid = info[kCGWindowOwnerPID as String] as? Int32, pid != ownPid,
+                  let pid = info[kCGWindowOwnerPID as String] as? Int32,
                   let id = info[kCGWindowNumber as String] as? UInt32,
                   (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
                   let boundsInfo = info[kCGWindowBounds as String] as? NSDictionary,

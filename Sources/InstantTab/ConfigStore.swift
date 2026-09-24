@@ -1,9 +1,12 @@
 import Foundation
 import InstantTabCore
+import Observation
 
 /// Loads `~/.config/instanttab/config.json5`, writes the documented defaults on first launch, and
-/// reloads on save. A broken file keeps the last good config and reports the error in the menu.
+/// reloads on save. Settings edits apply in memory at once and reach the file shortly after, so a
+/// dragged slider writes once. A broken file keeps the last good config and reports the error.
 @MainActor
+@Observable
 final class ConfigStore {
     static let directory = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/instanttab")
     static let fileURL = directory.appending(path: "config.json5")
@@ -11,11 +14,14 @@ final class ConfigStore {
     private(set) var config = Config()
     private(set) var error: String?
     private(set) var warnings: [String] = []
-    var onChange: ((Config) -> Void)?
+    @ObservationIgnored var onChange: ((Config) -> Void)?
 
-    private var directorySource: DispatchSourceFileSystemObject?
-    private var fileSource: DispatchSourceFileSystemObject?
-    private var reloadWork: DispatchWorkItem?
+    @ObservationIgnored private var directorySource: DispatchSourceFileSystemObject?
+    @ObservationIgnored private var fileSource: DispatchSourceFileSystemObject?
+    @ObservationIgnored private var reloadWork: DispatchWorkItem?
+    @ObservationIgnored private var saveWork: DispatchWorkItem?
+    /// What this process last wrote, so its own save is not read back as an outside edit.
+    @ObservationIgnored private var lastWritten: Data?
 
     func start() {
         createDefaultFileIfMissing()
@@ -24,11 +30,30 @@ final class ConfigStore {
         watchFile()
     }
 
+    /// Applies an edit from Settings now and saves it to the file shortly after.
+    func update(_ edit: (inout Config) -> Void) {
+        var next = config
+        edit(&next)
+        guard next != config else { return }
+        config = next
+        onChange?(next)
+        scheduleSave()
+    }
+
+    /// Writes any pending edit immediately, for quitting.
+    func flush() {
+        guard saveWork != nil else { return }
+        save()
+    }
+
     func load() {
+        // Unsaved edits from Settings are newer than the file.
+        guard saveWork == nil else { return }
         guard let data = try? Data(contentsOf: Self.fileURL) else {
             error = "cannot read \(Self.fileURL.path)"
             return
         }
+        guard data != lastWritten else { return }
         do {
             let parsed = try Config.parse(data)
             error = nil
@@ -41,6 +66,31 @@ final class ConfigStore {
         } catch {
             self.error = error.description
             Diagnostics.log.error("config: \(error.description, privacy: .public)")
+        }
+    }
+
+    private func scheduleSave() {
+        saveWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { self?.save() }
+        }
+        saveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(300), execute: work)
+    }
+
+    private func save() {
+        saveWork?.cancel()
+        saveWork = nil
+        let data = Data(config.fileContents.utf8)
+        do {
+            try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
+            try data.write(to: Self.fileURL, options: .atomic)
+            lastWritten = data
+            error = nil
+            warnings = []
+        } catch {
+            self.error = "cannot save: \(error.localizedDescription)"
+            Diagnostics.log.error("config save: \(error.localizedDescription, privacy: .public)")
         }
     }
 
