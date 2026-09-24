@@ -2,7 +2,7 @@
 
 A macOS Cmd+Tab replacement that opens as fast as the native switcher and is configurable like AltTab: display scope and display groups, excluded apps, one entry per app or per window, and Cmd+` behavior.
 
-Status: scaffold. See the roadmap below and [docs/research.md](docs/research.md) for the research and architecture.
+Status: daily driver (roadmap step 2). See [docs/research.md](docs/research.md) for the research and architecture.
 
 ## Requirements
 
@@ -20,7 +20,27 @@ Status: scaffold. See the roadmap below and [docs/research.md](docs/research.md)
    ```bash
    scripts/build.sh --install --run
    ```
-3. Grant Accessibility and Input Monitoring in System Settings > Privacy & Security when asked.
+3. Grant Accessibility in System Settings > Privacy & Security when asked. Without it Cmd+Tab still works, but Esc and the arrow keys do not, and windows are not raised within their app.
+4. Quit any other Cmd+Tab replacement (such as AltTab) so they do not both respond.
+
+## Using it
+
+- Hold Cmd and press Tab to move forward, add Shift to move back, release Cmd to switch. Arrow keys also move and Esc cancels.
+- A quick Cmd+Tab switches to the previous app without drawing anything.
+- The menu bar icon shows draw time (key press to first frame, after the show delay), config errors, Start at Login, and Pause, which hands Cmd+Tab back to macOS.
+- Native Cmd+Tab is restored whenever InstantTab quits or crashes. With Start at Login on, a crashed copy is relaunched.
+
+## Configuration
+
+Settings live in `~/.config/instanttab/config.json5`, created with every option documented on first launch. Changes apply on save.
+
+| Key | Values | Default |
+|---|---|---|
+| `showDelayMs` | 0 to 1000 | 50 |
+| `scope` | `"all"`, `"mouseDisplay"` | `"all"` |
+| `windowlessApps` | `"show"`, `"end"`, `"hide"` | `"show"` |
+| `iconSize` | 32 to 256 | 96 |
+| `exclude` | bundle ids, or `{ bundleId, when: "always" \| "noWindows" }`, `*` suffix for prefixes | none |
 
 ## Development
 
@@ -43,7 +63,7 @@ Status: scaffold. See the roadmap below and [docs/research.md](docs/research.md)
 
 ## Roadmap
 
-1. Scaffold: package, build and signing scripts, latency instrumentation.
-2. Daily driver: Cmd+Tab in app mode with quick tap, exclusions, all-displays or mouse-display scope, config file with live reload, login item, native switcher restore.
+1. Scaffold: package, build and signing scripts, latency instrumentation. (done)
+2. Daily driver: Cmd+Tab in app mode with quick tap, exclusions, all-displays or mouse-display scope, config file with live reload, login item, native switcher restore. (in testing)
 3. Customization: window mode and per-app overrides, Cmd+`, display groups, multiple shortcut profiles, Spaces and minimized window handling.
 4. Polish: settings window, optional thumbnails, type to search.
