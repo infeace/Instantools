@@ -66,10 +66,13 @@ public struct SwitcherEntry: Sendable, Equatable {
     public var pid: Int32
     public var name: String
     public var windowId: UInt32?
+    /// The app key bound to this app, shown on its tile.
+    public var key: Character?
 
-    public init(pid: Int32, name: String, windowId: UInt32?) {
+    public init(pid: Int32, name: String, windowId: UInt32?, key: Character? = nil) {
         self.pid = pid
         self.name = name
         self.windowId = windowId
+        self.key = key
     }
 }

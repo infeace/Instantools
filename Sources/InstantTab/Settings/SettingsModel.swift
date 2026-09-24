@@ -96,7 +96,7 @@ final class SettingsModel {
             previewPids = recent
             previewApps = recent.compactMap { pid in
                 guard let app = NSRunningApplication(processIdentifier: pid), let icon = app.icon else { return nil }
-                return PreviewApp(id: pid, name: app.localizedName ?? "App", icon: icon)
+                return PreviewApp(id: pid, name: app.localizedName ?? "App", icon: icon, bundleId: app.bundleIdentifier)
             }
         }
         let screen = NSScreen.screens.first { $0.displayId == switcherDisplay } ?? NSScreen.main
@@ -148,6 +148,8 @@ final class SettingsModel {
             }
         )
     }
+
+    var runningAppChoices: [AppChoice] { runningApps }
 
     var runningAppsToExclude: [AppChoice] {
         let excluded = Set(configStore.config.exclude.map { $0.bundleId.lowercased() })
@@ -208,6 +210,26 @@ final class SettingsModel {
         guard panel.runModal() == .OK else { return }
         let rules = panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }.map { Config.Exclusion(bundleId: $0) }
         configStore.update { $0.addExclusions(rules) }
+    }
+
+    /// The bundle id of one app picked from Applications.
+    func chooseApp() -> String? {
+        let panel = NSOpenPanel()
+        panel.title = "Choose an App"
+        panel.prompt = "Choose"
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        return Bundle(url: url)?.bundleIdentifier
+    }
+
+    func bindAppKey(_ key: Character, to bundleId: String, replacing current: Character? = nil) {
+        configStore.update { $0.bindAppKey(key, to: bundleId, replacing: current) }
+    }
+
+    func removeAppKey(_ key: Character) {
+        configStore.update { $0.appKeys.removeAll { $0.key == key } }
     }
 
     static let groupColors: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .yellow, .red]

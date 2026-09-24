@@ -217,6 +217,19 @@ struct CardActions<Content: View>: View {
     }
 }
 
+/// A running app in an "Add Running App" menu.
+struct AppChoiceLabel: View {
+    let app: SettingsModel.AppChoice
+
+    var body: some View {
+        if let icon = AppLookup.menuIcon(app.icon) {
+            Label { Text(app.name) } icon: { Image(nsImage: icon) }
+        } else {
+            Text(app.name)
+        }
+    }
+}
+
 struct RemoveButton: View {
     let help: String
     let action: () -> Void

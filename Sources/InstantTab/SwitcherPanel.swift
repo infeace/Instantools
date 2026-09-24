@@ -21,6 +21,8 @@ final class SwitcherPanel {
     private let highlight = CALayer()
     private let nameLayer = CATextLayer()
     private var tiles: [CALayer] = []
+    private var badges: [CALayer] = []
+    private static var badgeImages: [Character: CGImage] = [:]
     private var tileSize: CGFloat = 0
     private var tileInset: CGFloat = 0
     private var panelWidth: CGFloat = 0
@@ -78,6 +80,11 @@ final class SwitcherPanel {
         CATransaction.flush()
         panel.orderOut(nil)
         panel.alphaValue = 1
+    }
+
+    /// Called when the config changes, so a show only swaps layer contents.
+    func prepareBadges(for keys: [Character]) {
+        for key in keys { _ = Self.badgeImage(key) }
     }
 
     func show(entries: [SwitcherEntry], selected: Int, on screen: NSScreen, iconSize: CGFloat) {
@@ -168,10 +175,17 @@ final class SwitcherPanel {
             tile.minificationFilter = .trilinear
             root.insertSublayer(tile, above: highlight)
             tiles.append(tile)
+            let badge = CALayer()
+            badge.minificationFilter = .trilinear
+            root.addSublayer(badge)
+            badges.append(badge)
         }
+        let badgeSize = Self.badgeSize(icon: icon)
         for (index, tile) in tiles.enumerated() {
+            let badge = badges[index]
             guard index < entries.count else {
                 tile.isHidden = true
+                badge.isHidden = true
                 continue
             }
             tile.isHidden = false
@@ -182,6 +196,10 @@ final class SwitcherPanel {
                 y: Metrics.padding + Metrics.nameHeight + tileInset,
                 width: icon, height: icon
             )
+            let image = entries[index].key.flatMap(Self.badgeImage)
+            badge.isHidden = image == nil
+            badge.contents = image
+            badge.frame = CGRect(x: tile.frame.maxX - badgeSize, y: tile.frame.minY, width: badgeSize, height: badgeSize)
         }
         placeSelection(selected)
         CATransaction.commit()
@@ -207,6 +225,43 @@ final class SwitcherPanel {
         let width = Self.measure(name)
         nameWidths[name] = width
         return width
+    }
+
+    /// Sits on the icon's bottom-right corner, clear of where the Dock puts unread badges.
+    static func badgeSize(icon: CGFloat) -> CGFloat {
+        min(max((icon * 0.26).rounded(), 14), 30)
+    }
+
+    static func badgeImage(_ key: Character) -> CGImage? {
+        if let image = badgeImages[key] { return image }
+        let image = renderBadge(key)
+        badgeImages[key] = image
+        return image
+    }
+
+    /// Dark in both appearances, so it reads on any icon.
+    private static func renderBadge(_ key: Character) -> CGImage? {
+        let pixels: CGFloat = 64
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(
+                  data: nil, width: Int(pixels), height: Int(pixels), bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+              )
+        else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+        let shape = NSBezierPath(roundedRect: NSRect(x: 2, y: 2, width: pixels - 4, height: pixels - 4), xRadius: 15, yRadius: 15)
+        NSColor(white: 0.1, alpha: 0.8).setFill()
+        shape.fill()
+        NSColor(white: 1, alpha: 0.35).setStroke()
+        shape.lineWidth = 2
+        shape.stroke()
+        let font = NSFont.systemFont(ofSize: 36, weight: .semibold)
+        let text = NSAttributedString(string: String(key).uppercased(), attributes: [.font: font, .foregroundColor: NSColor.white])
+        // Centers the capital or digit itself rather than the line, which includes the descender.
+        text.draw(at: NSPoint(x: (pixels - text.size().width) / 2, y: (pixels - font.capHeight) / 2 + font.descender))
+        NSGraphicsContext.restoreGraphicsState()
+        return context.makeImage()
     }
 
     /// Matches what the name layer draws, so a label this wide is never truncated.

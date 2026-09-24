@@ -10,7 +10,10 @@ struct GeneralPane: View {
             PaneHeader(pane: .general, subtitle: "How InstantTab takes over Cmd+Tab and how the switcher looks.")
             FileProblemBanner(configStore: model.configStore)
             Hero {
-                SwitcherPreview(apps: model.previewApps, iconSize: model.configStore.config.iconSize, isActive: !model.isPaused)
+                SwitcherPreview(
+                    apps: model.previewApps, iconSize: model.configStore.config.iconSize, isActive: !model.isPaused,
+                    appKeys: model.configStore.config.appKeys
+                )
             } bar: {
                 statusBar(compact: compact)
             }

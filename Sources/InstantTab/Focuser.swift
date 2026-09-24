@@ -10,10 +10,7 @@ final class Focuser: Sendable {
     private let generation = OSAllocatedUnfairLock(initialState: 0)
 
     func focus(_ entry: SwitcherEntry) {
-        let token = generation.withLock { value in
-            value += 1
-            return value
-        }
+        let token = nextToken()
         // Accessibility calls into this process run AppKit on the calling thread, which crashes off main,
         // so InstantTab's own windows are brought forward with AppKit.
         guard entry.pid != ownPid else {
@@ -23,6 +20,24 @@ final class Focuser: Sendable {
             return
         }
         queue.async { [self] in perform(entry, token: token) }
+    }
+
+    /// For an app key whose app is not running. Opening it cancels any focus still in flight.
+    func launch(bundleId: String) {
+        _ = nextToken()
+        queue.async {
+            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) else {
+                return DispatchQueue.main.async { NSSound.beep() }
+            }
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        }
+    }
+
+    private func nextToken() -> Int {
+        generation.withLock { value in
+            value += 1
+            return value
+        }
     }
 
     @MainActor private static func focusOwnWindow(_ windowId: UInt32?) {

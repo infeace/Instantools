@@ -4,6 +4,7 @@ public enum SwitcherFilter {
         for snapshot: Snapshot,
         config: Config,
         exclusions: ExclusionMatcher,
+        appKeys: AppKeyMap = AppKeyMap([]),
         displays: [Display],
         targets: Set<UInt32>?
     ) -> [SwitcherEntry] {
@@ -17,7 +18,7 @@ public enum SwitcherFilter {
             if exclusions.isExcluded(bundleId: app.bundleId, hasWindows: !windows.isEmpty) { continue }
 
             func entry(_ windowId: UInt32?) -> SwitcherEntry {
-                SwitcherEntry(pid: app.pid, name: app.name, windowId: windowId)
+                SwitcherEntry(pid: app.pid, name: app.name, windowId: windowId, key: appKeys.key(for: app.bundleId))
             }
 
             if let targets {

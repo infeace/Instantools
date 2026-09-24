@@ -13,10 +13,13 @@ final class SwitcherController {
     var config = Config() {
         didSet {
             exclusions = ExclusionMatcher(config.exclude)
+            appKeys = AppKeyMap(config.appKeys)
+            panel.prepareBadges(for: config.appKeys.map(\.key))
             resolveGroups()
         }
     }
     private var exclusions = ExclusionMatcher([])
+    private var appKeys = AppKeyMap([])
     private var groups = ResolvedGroups([], displays: [])
     private var session: SwitcherSession?
     private var sessionDisplay: UInt32?
@@ -69,6 +72,7 @@ final class SwitcherController {
 
     func sessionKey(_ key: SessionKey) {
         guard let selected = session?.selected else { return }
+        if case .app(let character) = key { return switchToApp(boundTo: character) }
         // A key pressed before the show delay has passed shows the panel, so nothing happens unseen.
         if key != .cancel { showNow() }
         switch key {
@@ -77,6 +81,22 @@ final class SwitcherController {
         case .next: changeSelection { $0.move(by: 1) }
         case .quit: quit(selected.pid)
         case .hide: hide(selected.pid)
+        case .app: break
+        }
+    }
+
+    /// Switches on the key press, without waiting for Cmd to be released. Within the show delay nothing
+    /// is drawn, like a quick Cmd+Tab. An unbound key does nothing.
+    private func switchToApp(boundTo key: Character) {
+        guard let active = session,
+              let target = SwitcherFilter.target(forAppKey: key, appKeys: appKeys, in: tracker.snapshot, listed: active.entries)
+        else { return }
+        switch target {
+        case .running(let entry):
+            commit(entry)
+        case .launch(let bundleId):
+            end()
+            focuser.launch(bundleId: bundleId)
         }
     }
 
@@ -181,8 +201,8 @@ final class SwitcherController {
         showPanel(measured: false)
     }
 
-    private func commit() {
-        guard let entry = session?.selected else { return end() }
+    private func commit(_ chosen: SwitcherEntry? = nil) {
+        guard let entry = chosen ?? session?.selected else { return end() }
         focuser.focus(entry)
         lastChoice = (entry.pid, NSWorkspace.shared.frontmostApplication?.processIdentifier, DispatchTime.now().uptimeNanoseconds)
         end()
@@ -220,7 +240,8 @@ final class SwitcherController {
 
     private func currentEntries(targets: Set<UInt32>?) -> [SwitcherEntry] {
         SwitcherFilter.entries(
-            for: tracker.snapshot, config: config, exclusions: exclusions, displays: displays.displays, targets: targets
+            for: tracker.snapshot, config: config, exclusions: exclusions, appKeys: appKeys,
+            displays: displays.displays, targets: targets
         )
     }
 }

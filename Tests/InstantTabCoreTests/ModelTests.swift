@@ -89,14 +89,24 @@ struct SessionKeyTests {
         #expect(SessionKey(keycode: 4, characters: "H") == .hide)
         #expect(SessionKey(keycode: 50, characters: "`") == .previous)
         // AZERTY: the US Q position types A, and Q sits where US A is.
-        #expect(SessionKey(keycode: 12, characters: "a") == nil)
+        #expect(SessionKey(keycode: 12, characters: "a") == .app("a"))
         #expect(SessionKey(keycode: 0, characters: "q") == .quit)
     }
 
     @Test func nonLatinLayoutsUseTheUSPosition() {
         #expect(SessionKey(keycode: 12, characters: "я") == .quit)
         #expect(SessionKey(keycode: 4, characters: "") == .hide)
-        #expect(SessionKey(keycode: 7, characters: "ь") == nil)
+        #expect(SessionKey(keycode: 3, characters: "ф") == .app("f"))
+        #expect(SessionKey(keycode: 18, characters: "") == .app("1"))
+    }
+
+    @Test func lettersAndDigitsAreAppKeys() {
+        #expect(SessionKey(keycode: 3, characters: "F") == .app("f"))
+        #expect(SessionKey(keycode: 29, characters: "0") == .app("0"))
+        #expect(SessionKey(keycode: 36, characters: "\r") == nil)
+        #expect(SessionKey(keycode: 49, characters: " ") == nil)
+        #expect(SessionKey(keycode: 43, characters: ",") == nil)
+        #expect(!SessionKey.app("f").repeats)
     }
 
     @Test func onlyMovesRepeat() {

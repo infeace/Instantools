@@ -6,12 +6,14 @@ struct PreviewApp: Identifiable {
     let id: Int32
     let name: String
     let icon: NSImage
+    let bundleId: String?
 }
 
 struct SwitcherPreview: View {
     let apps: [PreviewApp]
     let iconSize: Double
     let isActive: Bool
+    let appKeys: [Config.AppKey]
     @Environment(\.colorScheme) private var colorScheme
 
     // Mirrors SwitcherPanel's private metrics.
@@ -48,13 +50,24 @@ struct SwitcherPreview: View {
     private func panel(tile: CGFloat, inset: CGFloat) -> some View {
         let dark = colorScheme == .dark
         let selected = apps.count > 1 ? 1 : 0
+        let keys = AppKeyMap(appKeys)
+        let icon = tile - 2 * inset
+        let badge = SwitcherPanel.badgeSize(icon: icon)
         return VStack(spacing: 0) {
             HStack(spacing: 0) {
                 ForEach(Array(apps.enumerated()), id: \.element.id) { index, app in
                     Image(nsImage: app.icon)
                         .resizable()
                         .interpolation(.high)
-                        .frame(width: tile - 2 * inset, height: tile - 2 * inset)
+                        .frame(width: icon, height: icon)
+                        .overlay(alignment: .bottomTrailing) {
+                            if let key = keys.key(for: app.bundleId), let image = SwitcherPanel.badgeImage(key) {
+                                Image(decorative: image, scale: 1)
+                                    .resizable()
+                                    .interpolation(.high)
+                                    .frame(width: badge, height: badge)
+                            }
+                        }
                         .padding(inset)
                         .background {
                             if index == selected {

@@ -38,15 +38,7 @@ struct ExclusionsPane: View {
     @ViewBuilder private var addButtons: some View {
         Menu("Add Running App") {
             ForEach(model.runningAppsToExclude, id: \.bundleId) { app in
-                Button {
-                    model.exclude(app.bundleId)
-                } label: {
-                    if let icon = AppLookup.menuIcon(app.icon) {
-                        Label { Text(app.name) } icon: { Image(nsImage: icon) }
-                    } else {
-                        Text(app.name)
-                    }
-                }
+                Button { model.exclude(app.bundleId) } label: { AppChoiceLabel(app: app) }
             }
         }
         .fixedSize()

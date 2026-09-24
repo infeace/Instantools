@@ -59,6 +59,7 @@ public struct Config: Sendable, Equatable {
     public var iconSize = 96.0
     public var exclude: [Exclusion] = []
     public var displayGroups: [DisplayGroup] = []
+    public var appKeys: [AppKey] = []
 
     public init() {}
 
@@ -106,7 +107,7 @@ extension Config {
         public var warnings: [String]
     }
 
-    private static let knownKeys: Set = ["showDelayMs", "scope", "windowlessApps", "iconSize", "exclude", "displayGroups"]
+    private static let knownKeys: Set = ["showDelayMs", "scope", "windowlessApps", "iconSize", "exclude", "displayGroups", "appKeys"]
     private static let knownExclusionKeys: Set = ["bundleId", "when"]
     private static let knownGroupKeys: Set = ["name", "match"]
 
@@ -168,6 +169,25 @@ extension Config {
                 }
                 config.displayGroups.append(parsed)
             }
+        }
+        if let value = root["appKeys"] {
+            guard let bindings = value as? [String: Any] else { throw .invalid("appKeys must be an object of keys and bundle ids") }
+            for name in bindings.keys.sorted() {
+                guard name.count == 1, let key = name.lowercased().first, key.isASCII, key.isLowercase || key.isNumber else {
+                    throw .invalid("appKeys '\(name)' must be a single letter or digit")
+                }
+                guard let bundleId = bindings[name] as? String, !bundleId.isEmpty else {
+                    throw .invalid("appKeys.\(name) must be a bundle id")
+                }
+                if AppKey.reserved.contains(key) {
+                    warnings.append("appKeys '\(name)' is ignored, since \(name.uppercased()) \(key == "q" ? "quits" : "hides") the selected app")
+                } else if config.appKeys.contains(where: { $0.key == key }) {
+                    warnings.append("appKeys lists '\(key)' twice, the first is used")
+                } else {
+                    config.appKeys.append(AppKey(key: key, bundleId: bundleId))
+                }
+            }
+            config.appKeys.sort { $0.key < $1.key }
         }
         if case .group(let name) = config.scope, !config.displayGroups.contains(where: { $0.name == name }) {
             warnings.append("scope uses group '\(name)', which does not exist, so all monitors are shown")
@@ -261,6 +281,15 @@ extension Config {
             }
             return "    { name: \(Self.quoted(group.name)), match: [\(match.joined(separator: ", "))] },"
         }
+        // JSON5 names must not start with a digit unless quoted.
+        let keyLines = appKeys.map { binding in
+            let name = binding.key.isNumber ? Self.quoted(String(binding.key)) : String(binding.key)
+            return "    \(name): \(Self.quoted(binding.bundleId)),"
+        }
+        let keyExamples = [
+            "    // f: \"com.apple.finder\",",
+            "    // \"1\": \"com.apple.Safari\",",
+        ]
         let groupExamples = [
             "    // { name: \"Laptop\", match: [\"builtIn\"] },",
             "    // { name: \"Desk\", match: [\"external\"] },",
@@ -301,6 +330,12 @@ extension Config {
           displayGroups: [
         \((groupLines.isEmpty ? groupExamples : groupLines).joined(separator: "\n"))
           ],
+
+          // Hold Cmd, press Tab, then one of these keys to go straight to its app, which opens if it is
+          // not running. A letter or digit mapped to a bundle id. Q and H quit and hide, so they are taken.
+          appKeys: {
+        \((keyLines.isEmpty ? keyExamples : keyLines).joined(separator: "\n"))
+          },
         }
 
         """

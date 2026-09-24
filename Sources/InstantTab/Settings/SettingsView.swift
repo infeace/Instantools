@@ -3,6 +3,7 @@ import SwiftUI
 
 enum SettingsPane: String, CaseIterable, Identifiable {
     case general
+    case keys
     case monitors
     case exclusions
     case about
@@ -12,6 +13,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .general: "General"
+        case .keys: "App Keys"
         case .monitors: "Monitors"
         case .exclusions: "Excluded Apps"
         case .about: "About"
@@ -21,6 +23,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .general: "gearshape.fill"
+        case .keys: "keyboard.fill"
         case .monitors: "display.2"
         case .exclusions: "eye.slash.fill"
         case .about: "info"
@@ -30,6 +33,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var colors: [Color] {
         switch self {
         case .general: [Color(white: 0.62), Color(white: 0.45)]
+        case .keys: [Color(red: 0.36, green: 0.8, blue: 0.47), Color(red: 0.15, green: 0.6, blue: 0.32)]
         case .monitors: [Color(red: 0.33, green: 0.62, blue: 1), Color(red: 0.13, green: 0.42, blue: 0.93)]
         case .exclusions: [Color(red: 1, green: 0.42, blue: 0.45), Color(red: 0.88, green: 0.2, blue: 0.33)]
         case .about: [Color(red: 0.38, green: 0.55, blue: 1), Color(red: 0.24, green: 0.25, blue: 0.86)]
@@ -70,6 +74,7 @@ struct SettingsView: View {
             Group {
                 switch selection {
                 case .general: GeneralPane(model: model)
+                case .keys: AppKeysPane(model: model)
                 case .monitors: MonitorsPane(model: model)
                 case .exclusions: ExclusionsPane(model: model)
                 case .about: AboutPane(model: model)

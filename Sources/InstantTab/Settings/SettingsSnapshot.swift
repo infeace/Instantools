@@ -12,7 +12,7 @@ enum SettingsSnapshot {
         guard let flag = arguments.firstIndex(of: "--snapshot-settings") else { return }
         let paneName = arguments.count > flag + 1 ? arguments[flag + 1] : ""
         guard arguments.count > flag + 2, paneName == "group-editor" || SettingsPane(rawValue: paneName) != nil else {
-            FileHandle.standardError.write(Data("usage: InstantTab --snapshot-settings <general|monitors|exclusions|about|group-editor> <out.png> [light|dark] [--sample] [--narrow] [--no-access]\n".utf8))
+            FileHandle.standardError.write(Data("usage: InstantTab --snapshot-settings <general|keys|monitors|exclusions|about|group-editor> <out.png> [light|dark] [--sample] [--narrow] [--no-access]\n".utf8))
             exit(2)
         }
         let output = URL(fileURLWithPath: arguments[flag + 2])
@@ -39,6 +39,9 @@ enum SettingsSnapshot {
                     DisplayGroup(name: "Desk", rules: [.external, .name("DELL*")]),
                 ]
                 $0.scope = .mouseGroup
+                $0.bindAppKey("f", to: "com.apple.finder")
+                $0.bindAppKey("s", to: "com.apple.Safari")
+                $0.bindAppKey("1", to: "com.example.Missing")
             }
         }
         let model = SettingsModel(configStore: store, actions: .init(
