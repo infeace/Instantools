@@ -4,6 +4,8 @@ import InstantTabCore
 /// Created once and reused: showing it only sets layer frames and contents. No SwiftUI, blur or animation.
 @MainActor
 final class SwitcherPanel {
+    static let nameFont = NSFont.systemFont(ofSize: 13, weight: .medium)
+
     private enum Metrics {
         static let padding: CGFloat = 14
         static let tileInset: CGFloat = 10
@@ -27,6 +29,8 @@ final class SwitcherPanel {
     private var selectedIndex = 0
     /// A pid, since the list can change between mouse-down and mouse-up.
     private var pressedPid: Int32?
+    /// Measured once per name, since the selection moves on every Tab.
+    private var nameWidths: [String: CGFloat] = [:]
 
     var onHover: ((Int) -> Void)?
     var onClick: ((Int) -> Void)?
@@ -57,8 +61,8 @@ final class SwitcherPanel {
         highlight.cornerCurve = .continuous
         nameLayer.alignmentMode = .center
         nameLayer.truncationMode = .end
-        nameLayer.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        nameLayer.fontSize = 13
+        nameLayer.font = Self.nameFont
+        nameLayer.fontSize = Self.nameFont.pointSize
         root.addSublayer(background)
         root.addSublayer(highlight)
         root.addSublayer(nameLayer)
@@ -189,10 +193,25 @@ final class SwitcherPanel {
         selectedIndex = index
         let x = Metrics.padding + CGFloat(index) * tileSize
         highlight.frame = CGRect(x: x, y: Metrics.padding + Metrics.nameHeight, width: tileSize, height: tileSize)
-        let nameWidth = min(panelWidth - 2 * Metrics.padding, max(tileSize * 2.5, 160))
-        let nameX = min(max(x + tileSize / 2 - nameWidth / 2, Metrics.padding), panelWidth - Metrics.padding - nameWidth)
-        nameLayer.frame = CGRect(x: nameX, y: Metrics.padding, width: nameWidth, height: Metrics.nameHeight - 6)
-        nameLayer.string = entries[index].name
+        let name = entries[index].name
+        let label = NameLabel.span(
+            textWidth: nameWidth(name), maxWidth: max(tileSize * 2.5, 160),
+            centeredOn: x + tileSize / 2, within: Metrics.padding...(panelWidth - Metrics.padding)
+        )
+        nameLayer.frame = CGRect(x: label.x, y: Metrics.padding, width: label.width, height: Metrics.nameHeight - 6)
+        nameLayer.string = name
+    }
+
+    private func nameWidth(_ name: String) -> CGFloat {
+        if let width = nameWidths[name] { return width }
+        let width = Self.measure(name)
+        nameWidths[name] = width
+        return width
+    }
+
+    /// Matches what the name layer draws, so a label this wide is never truncated.
+    static func measure(_ name: String) -> CGFloat {
+        (name as NSString).size(withAttributes: [.font: nameFont]).width.rounded(.up)
     }
 }
 

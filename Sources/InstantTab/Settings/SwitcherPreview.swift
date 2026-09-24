@@ -1,4 +1,5 @@
 import AppKit
+import InstantTabCore
 import SwiftUI
 
 struct PreviewApp: Identifiable {
@@ -64,12 +65,17 @@ struct SwitcherPreview: View {
                 }
             }
             let rowWidth = CGFloat(apps.count) * tile
-            Text(apps.indices.contains(selected) ? apps[selected].name : "")
-                .font(.system(size: 13, weight: .medium))
+            let name = apps.indices.contains(selected) ? apps[selected].name : ""
+            let label = NameLabel.span(
+                textWidth: SwitcherPanel.measure(name), maxWidth: max(tile * 2.5, 160),
+                centeredOn: (CGFloat(selected) + 0.5) * tile, within: 0...rowWidth
+            )
+            Text(name)
+                .font(Font(SwitcherPanel.nameFont))
                 .foregroundStyle(dark ? .white : .black)
                 .lineLimit(1)
-                .frame(width: max(tile * 2.5, 160), height: nameHeight - 6)
-                .offset(x: (CGFloat(selected) + 0.5) * tile - rowWidth / 2)
+                .frame(width: label.width, height: nameHeight - 6)
+                .offset(x: label.x + label.width / 2 - rowWidth / 2)
                 .frame(width: rowWidth)
                 .padding(.top, 3)
         }
