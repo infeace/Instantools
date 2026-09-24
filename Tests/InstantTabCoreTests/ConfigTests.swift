@@ -13,6 +13,22 @@ struct ConfigTests {
         #expect(parsed.warnings.isEmpty)
     }
 
+    @Test func fileContentsRoundTrip() throws {
+        var config = Config()
+        config.showDelayMs = 0
+        config.scope = .mouseDisplay
+        config.windowlessApps = .end
+        config.iconSize = 72.5
+        config.exclude = [
+            .init(bundleId: "com.apple.finder", when: .noWindows),
+            .init(bundleId: "com.parallels.*"),
+            .init(bundleId: "odd\"id\\with/escapes"),
+        ]
+        let parsed = try parse(config.fileContents)
+        #expect(parsed.config == config)
+        #expect(parsed.warnings.isEmpty)
+    }
+
     @Test func missingKeysKeepDefaults() throws {
         let parsed = try parse("{ scope: \"mouseDisplay\" }")
         var expected = Config()

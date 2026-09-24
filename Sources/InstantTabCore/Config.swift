@@ -150,33 +150,58 @@ extension Config {
 }
 
 extension Config {
-    /// Written on first launch. Parses to the defaults, so it doubles as documentation.
-    public static let defaultFileContents = """
-    // InstantTab settings. Changes apply as soon as you save this file.
-    {
-      // Milliseconds before the switcher is drawn. A Cmd+Tab released sooner
-      // switches without drawing anything. 0 draws immediately.
-      showDelayMs: 50,
+    /// The documented file for this config: written on first launch and whenever Settings saves.
+    /// Parsing it gives back the same config.
+    public var fileContents: String {
+        let rules = exclude.map { rule in
+            rule.when == .always
+                ? "    \(Self.quoted(rule.bundleId)),"
+                : "    { bundleId: \(Self.quoted(rule.bundleId)), when: \(Self.quoted(rule.when.rawValue)) },"
+        }
+        let examples = [
+            "    // \"com.example.App\",",
+            "    // { bundleId: \"com.apple.finder\", when: \"noWindows\" },",
+        ]
+        return """
+        // InstantTab settings. Edit here or in Settings; changes apply as soon as the file is saved.
+        // Saving from Settings rewrites this file in this layout, so custom comments are not kept.
+        {
+          // Milliseconds before the switcher is drawn. A Cmd+Tab released sooner
+          // switches without drawing anything. 0 draws immediately.
+          showDelayMs: \(showDelayMs),
 
-      // Which apps to list:
-      //   "all"           every running app, like native Cmd+Tab
-      //   "mouseDisplay"  only apps with a window on the display under the mouse
-      scope: "all",
+          // Which apps to list:
+          //   "all"           every running app, like native Cmd+Tab
+          //   "mouseDisplay"  only apps with a window on the display under the mouse
+          scope: \(Self.quoted(scope.rawValue)),
 
-      // Apps with no visible window (hidden, minimized or windowless):
-      //   "show" in recent order, "end" after the others, or "hide".
-      windowlessApps: "show",
+          // Apps with no visible window (hidden, minimized or windowless):
+          //   "show" in recent order, "end" after the others, or "hide".
+          windowlessApps: \(Self.quoted(windowlessApps.rawValue)),
 
-      // Icon size in points. Shrinks automatically when the apps do not fit.
-      iconSize: 96,
+          // Icon size in points. Shrinks automatically when the apps do not fit.
+          iconSize: \(Self.number(iconSize)),
 
-      // Apps to leave out, by bundle id. A trailing * matches a prefix.
-      // "when" is "always" (the default) or "noWindows".
-      exclude: [
-        // "com.example.App",
-        // { bundleId: "com.apple.finder", when: "noWindows" },
-      ],
+          // Apps to leave out, by bundle id. A trailing * matches a prefix.
+          // "when" is "always" (the default) or "noWindows".
+          exclude: [
+        \((rules.isEmpty ? examples : rules).joined(separator: "\n"))
+          ],
+        }
+
+        """
     }
 
-    """
+    public static var defaultFileContents: String { Config().fileContents }
+
+    private static func quoted(_ string: String) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: string, options: [.fragmentsAllowed, .withoutEscapingSlashes]),
+              let encoded = String(data: data, encoding: .utf8)
+        else { return "\"\"" }
+        return encoded
+    }
+
+    private static func number(_ value: Double) -> String {
+        value == value.rounded() ? String(Int(value)) : String(value)
+    }
 }
