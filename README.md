@@ -37,10 +37,13 @@ Settings live in `~/.config/instanttab/config.json5`, created with every option 
 | Key | Values | Default |
 |---|---|---|
 | `showDelayMs` | 0 to 1000 | 50 |
-| `scope` | `"all"`, `"mouseDisplay"` | `"all"` |
+| `scope` | `"all"`, `"mouseDisplay"`, `"focusedDisplay"`, `"mouseGroup"`, `"group:<name>"` | `"all"` |
 | `windowlessApps` | `"show"`, `"end"`, `"hide"` | `"show"` |
 | `iconSize` | 32 to 256 | 96 |
 | `exclude` | bundle ids, or `{ bundleId, when: "always" \| "noWindows" }`, `*` suffix for prefixes | none |
+| `displayGroups` | `{ name, match: [rules] }`; rules are `"builtIn"`, `"external"`, `"landscape"`, `"portrait"`, `"main"`, `"leftmost"`, `"rightmost"`, `"topmost"`, `"bottommost"`, `{ name: "DELL*" }`, `{ uuid }` | none |
+
+Everything here can also be edited in Settings (menu bar icon, then Settings…). Saving from Settings rewrites the file in its documented layout.
 
 ## Development
 
