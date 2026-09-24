@@ -1,15 +1,15 @@
 public enum SwitcherFilter {
     /// The switcher's entries, one per app, most recently used first. Pure and allocation-light:
     /// this runs on every key press.
+    /// `targets` are the displays in scope (from `DisplayScope.targets`), or nil for every display.
     public static func entries(
         for snapshot: Snapshot,
         config: Config,
         displays: [Display],
-        mouseDisplay: UInt32?
+        targets: Set<UInt32>?
     ) -> [SwitcherEntry] {
         let windowsByPid = Dictionary(grouping: snapshot.windows, by: \.pid)
         let liveDisplays = Set(displays.map(\.id))
-        let target = config.scope == .mouseDisplay ? mouseDisplay : nil
 
         var listed: [SwitcherEntry] = []
         var trailing: [SwitcherEntry] = []
@@ -21,15 +21,17 @@ public enum SwitcherFilter {
                 SwitcherEntry(pid: app.pid, bundleId: app.bundleId, name: app.name, windowId: windowId)
             }
 
-            if let target {
-                if let window = windows.first(where: { DisplayMapping.display(for: $0.frame, in: displays) == target }) {
+            if let targets {
+                if let window = windows.first(where: { window in
+                    DisplayMapping.display(for: window.frame, in: displays).map(targets.contains) ?? false
+                }) {
                     listed.append(entry(window.id))
                     continue
                 }
                 // Visible only on other displays.
                 if !windows.isEmpty { continue }
                 // Hidden or minimized apps stay with the display they were last seen on.
-                if let last = snapshot.lastDisplayByPid[app.pid], liveDisplays.contains(last), last != target { continue }
+                if let last = snapshot.lastDisplayByPid[app.pid], liveDisplays.contains(last), !targets.contains(last) { continue }
             } else if let window = windows.first {
                 listed.append(entry(window.id))
                 continue

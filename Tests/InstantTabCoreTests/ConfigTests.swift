@@ -24,9 +24,33 @@ struct ConfigTests {
             .init(bundleId: "com.parallels.*"),
             .init(bundleId: "odd\"id\\with/escapes"),
         ]
+        config.displayGroups = [
+            DisplayGroup(name: "Laptop", rules: [.builtIn]),
+            DisplayGroup(name: "Desk \"left\"", rules: [.external, .portrait, .name("DELL*"), .uuid("ABC-123")]),
+        ]
+        config.scope = .group("Desk \"left\"")
         let parsed = try parse(config.fileContents)
         #expect(parsed.config == config)
         #expect(parsed.warnings.isEmpty)
+    }
+
+    @Test func scopeValues() throws {
+        for scope: Config.Scope in [.all, .mouseDisplay, .focusedDisplay, .mouseGroup, .group("Desk")] {
+            #expect(Config.Scope(rawValue: scope.rawValue) == scope)
+        }
+        #expect(Config.Scope(rawValue: "group:") == nil)
+        #expect(Config.Scope(rawValue: "everywhere") == nil)
+    }
+
+    @Test func displayGroupErrorsAndWarnings() throws {
+        #expect(throws: ConfigError.invalid("displayGroups has two groups named \"A\"")) {
+            try parse("{ displayGroups: [{ name: \"A\", match: [] }, { name: \"A\", match: [] }] }")
+        }
+        #expect(throws: ConfigError.self) {
+            try parse("{ displayGroups: [{ name: \"A\", match: [\"sideways\"] }] }")
+        }
+        let parsed = try parse("{ scope: \"group:Gone\" }")
+        #expect(parsed.warnings == ["scope uses group 'Gone', which does not exist, so all monitors are shown"])
     }
 
     @Test func missingKeysKeepDefaults() throws {
@@ -59,7 +83,7 @@ struct ConfigTests {
     }
 
     @Test func invalidValuesAreErrors() {
-        #expect(throws: ConfigError.invalid("scope must be one of \"all\", \"mouseDisplay\"")) {
+        #expect(throws: ConfigError.invalid("scope must be \"all\", \"mouseDisplay\", \"focusedDisplay\", \"mouseGroup\" or \"group:<name>\"")) {
             try parse("{ scope: \"everywhere\" }")
         }
         #expect(throws: ConfigError.invalid("showDelayMs must be a whole number from 0 to 1000")) {

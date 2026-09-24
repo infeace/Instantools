@@ -26,7 +26,7 @@ struct SwitcherFilterTests {
                 WindowRecord(id: 11, pid: 1, frame: right),
             ]
         )
-        let entries = SwitcherFilter.entries(for: snapshot, config: Config(), displays: displays, mouseDisplay: 1)
+        let entries = SwitcherFilter.entries(for: snapshot, config: Config(), displays: displays, targets: nil)
         #expect(pids(entries) == [1, 2, 3])
         #expect(entries.map(\.windowId) == [10, 20, nil])
     }
@@ -35,9 +35,9 @@ struct SwitcherFilterTests {
         let snapshot = Snapshot(apps: [app(1), app(2), app(3)], windows: [WindowRecord(id: 30, pid: 3, frame: left)])
         var config = Config()
         config.windowlessApps = .end
-        #expect(pids(SwitcherFilter.entries(for: snapshot, config: config, displays: displays, mouseDisplay: nil)) == [3, 1, 2])
+        #expect(pids(SwitcherFilter.entries(for: snapshot, config: config, displays: displays, targets: nil)) == [3, 1, 2])
         config.windowlessApps = .hide
-        #expect(pids(SwitcherFilter.entries(for: snapshot, config: config, displays: displays, mouseDisplay: nil)) == [3])
+        #expect(pids(SwitcherFilter.entries(for: snapshot, config: config, displays: displays, targets: nil)) == [3])
     }
 
     @Test func exclusions() {
@@ -47,7 +47,7 @@ struct SwitcherFilterTests {
         )
         var config = Config()
         config.exclude = [.init(bundleId: "com.apple.finder", when: .noWindows), .init(bundleId: "com.excluded")]
-        #expect(pids(SwitcherFilter.entries(for: snapshot, config: config, displays: displays, mouseDisplay: nil)) == [3])
+        #expect(pids(SwitcherFilter.entries(for: snapshot, config: config, displays: displays, targets: nil)) == [3])
     }
 
     @Test func mouseDisplayScopeUsesWindowsOnThatDisplay() {
@@ -59,30 +59,39 @@ struct SwitcherFilterTests {
                 WindowRecord(id: 20, pid: 2, frame: right),
             ]
         )
-        var config = Config()
-        config.scope = .mouseDisplay
-        let onLeft = SwitcherFilter.entries(for: snapshot, config: config, displays: displays, mouseDisplay: 1)
+        let config = Config()
+        let onLeft = SwitcherFilter.entries(for: snapshot, config: config, displays: displays, targets: [1])
         #expect(pids(onLeft) == [1, 3])
         #expect(onLeft.first?.windowId == 10)
-        let onRight = SwitcherFilter.entries(for: snapshot, config: config, displays: displays, mouseDisplay: 2)
+        let onRight = SwitcherFilter.entries(for: snapshot, config: config, displays: displays, targets: [2])
         #expect(pids(onRight) == [1, 2, 3])
         #expect(onRight.first?.windowId == 11)
     }
 
     @Test func hiddenAppsStayWithTheirLastDisplay() {
         let snapshot = Snapshot(apps: [app(1), app(2), app(3)], windows: [], lastDisplayByPid: [1: 1, 2: 2, 3: 99])
-        var config = Config()
-        config.scope = .mouseDisplay
+        let config = Config()
         // Display 99 is disconnected, so app 3 is treated as never seen and shown everywhere.
-        #expect(pids(SwitcherFilter.entries(for: snapshot, config: config, displays: displays, mouseDisplay: 1)) == [1, 3])
-        #expect(pids(SwitcherFilter.entries(for: snapshot, config: config, displays: displays, mouseDisplay: 2)) == [2, 3])
+        #expect(pids(SwitcherFilter.entries(for: snapshot, config: config, displays: displays, targets: [1])) == [1, 3])
+        #expect(pids(SwitcherFilter.entries(for: snapshot, config: config, displays: displays, targets: [2])) == [2, 3])
     }
 
-    @Test func unknownMouseDisplayFallsBackToAll() {
+    @Test func noTargetsMeansEveryDisplay() {
         let snapshot = Snapshot(apps: [app(1), app(2)], windows: [WindowRecord(id: 20, pid: 2, frame: right)])
-        var config = Config()
-        config.scope = .mouseDisplay
-        #expect(pids(SwitcherFilter.entries(for: snapshot, config: config, displays: displays, mouseDisplay: nil)) == [1, 2])
+        #expect(pids(SwitcherFilter.entries(for: snapshot, config: Config(), displays: displays, targets: nil)) == [1, 2])
+    }
+
+    @Test func groupOfDisplaysListsAppsOnAnyOfThem() {
+        let snapshot = Snapshot(
+            apps: [app(1), app(2), app(3)],
+            windows: [
+                WindowRecord(id: 10, pid: 1, frame: left),
+                WindowRecord(id: 20, pid: 2, frame: right),
+                WindowRecord(id: 30, pid: 3, frame: CGRect(x: 5000, y: 0, width: 400, height: 400)),
+            ]
+        )
+        let wide = displays + [Display(id: 3, frame: CGRect(x: 4000, y: 0, width: 2000, height: 1000))]
+        #expect(pids(SwitcherFilter.entries(for: snapshot, config: Config(), displays: wide, targets: [1, 2])) == [1, 2])
     }
 
     @Test func initialIndexMatchesNative() {

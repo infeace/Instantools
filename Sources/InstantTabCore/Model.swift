@@ -32,10 +32,20 @@ public struct WindowRecord: Sendable, Equatable {
 public struct Display: Sendable, Equatable {
     public var id: UInt32
     public var frame: CGRect
+    /// Stable across reconnects, except between identical monitors.
+    public var uuid: String
+    public var name: String
+    public var isBuiltIn: Bool
+    /// Has the menu bar.
+    public var isMain: Bool
 
-    public init(id: UInt32, frame: CGRect) {
+    public init(id: UInt32, frame: CGRect, uuid: String = "", name: String = "", isBuiltIn: Bool = false, isMain: Bool = false) {
         self.id = id
         self.frame = frame
+        self.uuid = uuid
+        self.name = name
+        self.isBuiltIn = isBuiltIn
+        self.isMain = isMain
     }
 }
 
