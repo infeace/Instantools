@@ -14,6 +14,8 @@ enum NativeSwitcher {
     }
 
     nonisolated(unsafe) private static var signalSources: [DispatchSourceSignal] = []
+    /// Runs on the main thread when a termination signal (such as a replacing copy's SIGTERM) arrives.
+    nonisolated(unsafe) static var beforeSignalExit: (@MainActor () -> Void)?
 
     /// Normal exits restore through `atexit`. Termination signals exit normally, and crash signals
     /// restore on a best-effort basis and then re-raise so the crash is still reported. Crash handlers
@@ -30,7 +32,10 @@ enum NativeSwitcher {
         for sig in [SIGTERM, SIGINT, SIGHUP, SIGQUIT] {
             signal(sig, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
-            source.setEventHandler { exit(0) }
+            source.setEventHandler {
+                MainActor.assumeIsolated { beforeSignalExit?() }
+                exit(0)
+            }
             source.resume()
             signalSources.append(source)
         }

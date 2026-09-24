@@ -1,36 +1,57 @@
+import AppKit
 import ServiceManagement
 
-/// Start at login through a bundled launch agent that relaunches InstantTab if it crashes (so native
-/// Cmd+Tab is not left off), falling back to a plain login item if the agent cannot be registered.
+/// Start at login through a LaunchAgent in ~/Library/LaunchAgents. Toggling only writes or removes the
+/// file, so it takes effect instantly and never restarts the running copy; launchd picks the agent up
+/// at the next login and then relaunches InstantTab if it ever crashes, so native Cmd+Tab is never left
+/// off. A classic agent is used rather than SMAppService: without a Team ID, macOS pins an SMAppService
+/// agent to the exact binary that registered it, and every rebuild then fails its launch constraint.
 @MainActor
 enum LoginItem {
-    private static let agent = SMAppService.agent(plistName: "com.infeace.InstantTab.agent.plist")
+    static let label = "com.infeace.InstantTab"
+
+    static var plistURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/LaunchAgents/\(label).plist")
+    }
+
+    /// Whether this copy was started by the login agent.
+    nonisolated static var isSupervised: Bool {
+        ProcessInfo.processInfo.environment["INSTANTTAB_LAUNCH_AGENT"] == "1"
+    }
 
     static var isEnabled: Bool {
-        agent.status == .enabled || SMAppService.mainApp.status == .enabled
+        FileManager.default.fileExists(atPath: plistURL.path)
     }
 
-    static var needsApproval: Bool {
-        agent.status == .requiresApproval || SMAppService.mainApp.status == .requiresApproval
-    }
+    /// Classic agents need no approval, though macOS can still switch them off in Login Items.
+    static var needsApproval: Bool { false }
 
     static func setEnabled(_ enabled: Bool) throws {
         if enabled {
-            do {
-                try agent.register()
-            } catch {
-                Diagnostics.log.error("launch agent registration failed: \(error.localizedDescription, privacy: .public)")
-                // Waiting for approval is not a failure; registering both would start two copies at login.
-                guard agent.status != .requiresApproval else { return }
-                try SMAppService.mainApp.register()
-            }
-        } else {
-            if agent.status != .notRegistered { try agent.unregister() }
-            if SMAppService.mainApp.status != .notRegistered { try SMAppService.mainApp.unregister() }
+            try write()
+        } else if isEnabled {
+            try FileManager.default.removeItem(at: plistURL)
         }
     }
 
     static func openSettings() {
         SMAppService.openSystemSettingsLoginItems()
+    }
+
+    private static func write() throws {
+        guard let executable = Bundle.main.executablePath else { return }
+        let plist: [String: Any] = [
+            "Label": label,
+            "ProgramArguments": [executable],
+            "EnvironmentVariables": ["INSTANTTAB_LAUNCH_AGENT": "1"],
+            "RunAtLoad": true,
+            // Relaunch after a crash, not after quitting.
+            "KeepAlive": ["SuccessfulExit": false],
+            "ProcessType": "Interactive",
+            "LimitLoadToSessionType": "Aqua",
+        ]
+        let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        try FileManager.default.createDirectory(at: plistURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: plistURL, options: .atomic)
     }
 }

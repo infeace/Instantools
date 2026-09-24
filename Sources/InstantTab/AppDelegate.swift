@@ -21,7 +21,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 setPaused: { [unowned self] paused in setPaused(paused) },
                 latency: { [unowned self] in controller.latency },
                 displays: { [unowned self] in displays.displays },
-                mouseDisplay: { [unowned self] in displays.mouseDisplayId() }
+                mouseDisplay: { [unowned self] in displays.mouseDisplayId() },
+                recentApps: { [unowned self] in
+                    let own = ProcessInfo.processInfo.processIdentifier
+                    return tracker.snapshot.apps.map(\.pid).filter { $0 != own }
+                }
             ))
         },
         onOpenChange: { [unowned self] _ in tracker.reload() }
@@ -63,6 +67,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controller.warmUp()
         NSApp.mainMenu = makeMainMenu()
         statusItem = makeStatusItem()
+
+        NativeSwitcher.beforeSignalExit = { [unowned self] in
+            configStore.flush()
+            if settings.isOpen { Handoff.markSettingsOpen() }
+        }
+        if Handoff.consumeSettingsOpen() { settings.show() }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

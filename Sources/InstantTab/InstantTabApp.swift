@@ -18,7 +18,7 @@ struct InstantTabApp {
         guard let bundleId = Bundle.main.bundleIdentifier else { return }
         let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).filter { $0 != .current }
         guard !others.isEmpty else { return }
-        guard ProcessInfo.processInfo.environment["INSTANTTAB_LAUNCH_AGENT"] == "1" else { exit(0) }
+        guard LoginItem.isSupervised else { exit(0) }
         for other in others { kill(other.processIdentifier, SIGTERM) }
         // Wait for them to restore native Cmd+Tab and release the hotkeys before taking over.
         for _ in 0..<40 where others.contains(where: { kill($0.processIdentifier, 0) == 0 }) {

@@ -43,12 +43,10 @@ bin_dir="$(swift build -c "$config" --show-bin-path)"
 app=build/InstantTab.app
 stop_running "$PWD/$app"
 rm -rf "$app"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Library/LaunchAgents"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin_dir/InstantTab" "$app/Contents/MacOS/InstantTab"
 cp Resources/Info.plist "$app/Contents/Info.plist"
 cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
-# Start at login: a launch agent that relaunches InstantTab after a crash, registered from the menu.
-cp Resources/com.infeace.InstantTab.agent.plist "$app/Contents/Library/LaunchAgents/"
 build_number="$(git rev-list --count HEAD 2>/dev/null || echo 0)"
 plutil -replace CFBundleVersion -string "$build_number" "$app/Contents/Info.plist"
 
@@ -62,7 +60,8 @@ else
 fi
 codesign --verify --strict "$app"
 
-agent="gui/$(id -u)/com.infeace.InstantTab.agent"
+# Start at login writes this agent (see LoginItem.swift).
+agent="gui/$(id -u)/com.infeace.InstantTab"
 if [[ $install -eq 1 ]]; then
     stop_running "$HOME/Applications/InstantTab.app"
     mkdir -p "$HOME/Applications"

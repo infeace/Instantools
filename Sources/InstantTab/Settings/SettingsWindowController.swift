@@ -10,6 +10,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private var model: SettingsModel?
 
+    var isOpen: Bool { window != nil }
+
     init(makeModel: @escaping () -> SettingsModel, onOpenChange: @escaping (Bool) -> Void) {
         self.makeModel = makeModel
         self.onOpenChange = onOpenChange
@@ -24,8 +26,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             window.toolbarStyle = .unified
             window.titlebarAppearsTransparent = true
             window.isReleasedWhenClosed = false
-            window.setContentSize(NSSize(width: 760, height: 540))
-            window.contentMinSize = NSSize(width: 640, height: 420)
+            window.titleVisibility = .hidden
+            window.setContentSize(NSSize(width: 860, height: 640))
+            window.contentMinSize = NSSize(width: 720, height: 480)
             window.setFrameAutosaveName("InstantTabSettings")
             window.delegate = self
             if !window.setFrameUsingName("InstantTabSettings") { window.center() }
