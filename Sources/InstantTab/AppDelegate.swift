@@ -19,7 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             SettingsModel(configStore: configStore, actions: .init(
                 isPaused: { [unowned self] in isPaused },
                 setPaused: { [unowned self] paused in setPaused(paused) },
-                latency: { [unowned self] in controller.latency }
+                latency: { [unowned self] in controller.latency },
+                displays: { [unowned self] in displays.displays },
+                mouseDisplay: { [unowned self] in displays.mouseDisplayId() }
             ))
         },
         onOpenChange: { [unowned self] _ in tracker.reload() }
@@ -40,12 +42,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controller.config = configStore.config
 
         displays.start()
+        controller.resolveGroups()
         tracker.onChange = { [weak self] in
             guard let self else { return }
             icons.sync(with: tracker.snapshot.apps.map(\.pid))
             controller.modelChanged()
         }
-        displays.onChange = { [weak self] in self?.tracker.refreshWindows() }
+        displays.onChange = { [weak self] in
+            self?.controller.resolveGroups()
+            self?.tracker.refreshWindows()
+        }
         tracker.start()
         icons.sync(with: tracker.snapshot.apps.map(\.pid))
 

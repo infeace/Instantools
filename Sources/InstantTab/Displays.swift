@@ -26,11 +26,19 @@ final class Displays {
         var byId: [UInt32: NSScreen] = [:]
         for screen in NSScreen.screens {
             guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { continue }
-            list.append(Display(id: id, frame: CGDisplayBounds(id)))
+            list.append(Display(
+                id: id, frame: CGDisplayBounds(id), uuid: Self.uuid(of: id), name: screen.localizedName,
+                isBuiltIn: CGDisplayIsBuiltin(id) != 0, isMain: CGDisplayIsMain(id) != 0
+            ))
             byId[id] = screen
         }
         displays = list
         screensById = byId
+    }
+
+    private static func uuid(of id: CGDirectDisplayID) -> String {
+        guard let uuid = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue() else { return "" }
+        return CFUUIDCreateString(nil, uuid) as String
     }
 
     /// The display under the mouse pointer.

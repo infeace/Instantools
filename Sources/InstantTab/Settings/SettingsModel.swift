@@ -11,6 +11,8 @@ final class SettingsModel {
         var isPaused: () -> Bool
         var setPaused: (Bool) -> Void
         var latency: () -> LatencyStats
+        var displays: () -> [Display]
+        var mouseDisplay: () -> UInt32?
     }
 
     let configStore: ConfigStore
@@ -23,6 +25,8 @@ final class SettingsModel {
     /// One refresh of the main display, to put draw time in context.
     private(set) var frameMilliseconds = 1000.0 / 60
     private(set) var displayName = "this display"
+    private(set) var displays: [Display] = []
+    private(set) var mouseDisplay: UInt32?
 
     @ObservationIgnored let apps = AppLookup()
     @ObservationIgnored private let actions: Actions
@@ -58,6 +62,10 @@ final class SettingsModel {
         loginEnabled = LoginItem.isEnabled
         loginNeedsApproval = LoginItem.needsApproval
         latency = actions.latency()
+        let displays = actions.displays()
+        if displays != self.displays { self.displays = displays }
+        let mouse = actions.mouseDisplay()
+        if mouse != mouseDisplay { mouseDisplay = mouse }
         if let screen = NSScreen.main, screen.maximumFramesPerSecond > 0 {
             frameMilliseconds = 1000.0 / Double(screen.maximumFramesPerSecond)
             displayName = screen.localizedName
@@ -155,6 +163,60 @@ final class SettingsModel {
         guard panel.runModal() == .OK else { return }
         let rules = panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }.map { Config.Exclusion(bundleId: $0) }
         configStore.update { $0.addExclusions(rules) }
+    }
+
+    // MARK: Monitors
+
+    static let groupColors: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .yellow, .red]
+
+    var groups: [DisplayGroup] { configStore.config.displayGroups }
+
+    func color(ofGroup name: String) -> Color {
+        let index = groups.firstIndex { $0.name == name } ?? 0
+        return Self.groupColors[index % Self.groupColors.count]
+    }
+
+    /// Group colors for the groups a display is in, in group order.
+    func groupColors(of display: Display) -> [Color] {
+        groups.filter { $0.members(in: displays).contains(display.id) }.map { color(ofGroup: $0.name) }
+    }
+
+    /// The displays Cmd+Tab would list apps from right now. The focused window is taken to be
+    /// under the mouse, since Settings itself has focus while it is open.
+    var currentTargets: Set<UInt32>? {
+        DisplayScope.targets(
+            for: configStore.config.scope, groups: ResolvedGroups(groups, displays: displays),
+            mouseDisplay: mouseDisplay, focusedDisplay: mouseDisplay
+        )
+    }
+
+    var scopeOptions: [Config.Scope] {
+        var options: [Config.Scope] = [.all, .mouseDisplay, .focusedDisplay, .mouseGroup] + groups.map { .group($0.name) }
+        if !options.contains(configStore.config.scope) { options.append(configStore.config.scope) }
+        return options
+    }
+
+    func saveGroup(_ group: DisplayGroup, replacing originalName: String?) {
+        configStore.update { config in
+            if let originalName, let index = config.displayGroups.firstIndex(where: { $0.name == originalName }) {
+                config.displayGroups[index] = group
+                if config.scope == .group(originalName) { config.scope = .group(group.name) }
+            } else {
+                config.displayGroups.append(group)
+            }
+        }
+    }
+
+    func deleteGroup(_ name: String) {
+        configStore.update { config in
+            config.displayGroups.removeAll { $0.name == name }
+            if config.scope == .group(name) { config.scope = .all }
+        }
+    }
+
+    func newGroupName() -> String {
+        let names = Set(groups.map(\.name))
+        return (1...).lazy.map { $0 == 1 ? "New Group" : "New Group \($0)" }.first { !names.contains($0) }!
     }
 
     // MARK: Actions

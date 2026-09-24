@@ -57,13 +57,6 @@ struct GeneralPane: View {
                 Text("Icon size")
                 Text("Icons shrink automatically when the apps do not fit.")
             }
-            Picker(selection: model.binding(\.scope)) {
-                Text("All monitors").tag(Config.Scope.all)
-                Text("Monitor under the mouse").tag(Config.Scope.mouseDisplay)
-            } label: {
-                Text("Show apps from")
-                Text("Monitor groups come with the Monitors settings.")
-            }
             Picker(selection: model.binding(\.windowlessApps)) {
                 Text("Show in recent order").tag(Config.Placement.show)
                 Text("Show at the end").tag(Config.Placement.end)

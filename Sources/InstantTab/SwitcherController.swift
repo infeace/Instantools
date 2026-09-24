@@ -13,9 +13,14 @@ final class SwitcherController {
     private let probe = FrameProbe()
     private var taps: InputTaps?
 
-    var config = Config()
+    var config = Config() {
+        didSet { resolveGroups() }
+    }
+    /// Group membership for the connected displays, updated when displays or groups change.
+    private var groups = ResolvedGroups([], displays: [])
     private var session: SwitcherSession?
     private var sessionDisplay: UInt32?
+    private var sessionTargets: Set<UInt32>?
     private var pressNanoseconds: UInt64 = 0
     private var showWork: DispatchWorkItem?
     private var releasePoll: Timer?
@@ -42,8 +47,12 @@ final class SwitcherController {
         self.taps = taps
     }
 
+    func resolveGroups() {
+        groups = ResolvedGroups(config.displayGroups, displays: displays.displays)
+    }
+
     func warmUp() {
-        let entries = currentEntries(mouseDisplay: displays.mouseDisplayId())
+        let entries = currentEntries(targets: nil)
         panel.warmUp(entries: entries, icons: icons, on: displays.screen(for: displays.mouseDisplayId()), iconSize: config.iconSize)
     }
 
@@ -80,7 +89,7 @@ final class SwitcherController {
     /// The snapshot changed during a session: keep the selection and redraw if needed.
     func modelChanged() {
         guard var active = session else { return }
-        let entries = currentEntries(mouseDisplay: sessionDisplay)
+        let entries = currentEntries(targets: sessionTargets)
         guard entries != active.entries else { return }
         guard !entries.isEmpty else { return end() }
         active.reconcile(with: entries)
@@ -98,15 +107,19 @@ final class SwitcherController {
         pressNanoseconds = eventNanoseconds > 0 && eventNanoseconds <= now && now - eventNanoseconds < 1_000_000_000
             ? eventNanoseconds : now
 
-        let mouseDisplay = displays.mouseDisplayId()
-        let entries = currentEntries(mouseDisplay: mouseDisplay)
-        guard !entries.isEmpty else { return }
         // Right after a switch, macOS may not report the new frontmost app yet.
         let recentlyChosen = lastChosen.flatMap { now - $0.nanoseconds < 1_000_000_000 ? $0.pid : nil }
         let frontmost = recentlyChosen ?? NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let mouseDisplay = displays.mouseDisplayId()
+        let focusedDisplay = config.scope == .focusedDisplay
+            ? DisplayScope.focusedDisplay(in: tracker.snapshot, frontmostPid: frontmost, displays: displays.displays) : nil
+        let targets = DisplayScope.targets(for: config.scope, groups: groups, mouseDisplay: mouseDisplay, focusedDisplay: focusedDisplay)
+        let entries = currentEntries(targets: targets)
+        guard !entries.isEmpty else { return }
         let index = SwitcherFilter.initialIndex(count: entries.count, firstIsFrontmost: entries[0].pid == frontmost, reverse: reverse)
         session = SwitcherSession(entries: entries, selectedIndex: index)
         sessionDisplay = mouseDisplay
+        sessionTargets = targets
 
         // Cmd can already be up if the tap was very quick: switch without drawing.
         guard CGEventSource.flagsState(.combinedSessionState).contains(.maskCommand) else { return commit() }
@@ -141,6 +154,7 @@ final class SwitcherController {
     private func end() {
         session = nil
         sessionDisplay = nil
+        sessionTargets = nil
         showWork?.cancel()
         showWork = nil
         releasePoll?.invalidate()
@@ -161,7 +175,7 @@ final class SwitcherController {
         releasePoll = timer
     }
 
-    private func currentEntries(mouseDisplay: UInt32?) -> [SwitcherEntry] {
-        SwitcherFilter.entries(for: tracker.snapshot, config: config, displays: displays.displays, mouseDisplay: mouseDisplay)
+    private func currentEntries(targets: Set<UInt32>?) -> [SwitcherEntry] {
+        SwitcherFilter.entries(for: tracker.snapshot, config: config, displays: displays.displays, targets: targets)
     }
 }

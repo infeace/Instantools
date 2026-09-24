@@ -10,7 +10,8 @@ enum SettingsSnapshot {
     static func runIfRequested() {
         let arguments = CommandLine.arguments
         guard let flag = arguments.firstIndex(of: "--snapshot-settings"), arguments.count > flag + 2 else { return }
-        let pane = SettingsPane(rawValue: arguments[flag + 1]) ?? .general
+        let paneName = arguments[flag + 1]
+        let pane = SettingsPane(rawValue: paneName) ?? .general
         let output = URL(fileURLWithPath: arguments[flag + 2])
         let dark = arguments.count > flag + 3 && arguments[flag + 3] == "dark"
 
@@ -18,6 +19,8 @@ enum SettingsSnapshot {
         app.setActivationPolicy(.prohibited)
         app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
 
+        let displays = Displays()
+        displays.start()
         let store = ConfigStore(persists: false)
         store.load()
         if arguments.contains("--sample") {
@@ -28,6 +31,11 @@ enum SettingsSnapshot {
                     .init(bundleId: "com.parallels.*"),
                     .init(bundleId: "com.example.Missing"),
                 ]
+                $0.displayGroups = [
+                    DisplayGroup(name: "Laptop", rules: [.builtIn]),
+                    DisplayGroup(name: "Desk", rules: [.external, .name("DELL*")]),
+                ]
+                $0.scope = .mouseGroup
             }
         }
         let model = SettingsModel(configStore: store, actions: .init(
@@ -37,9 +45,18 @@ enum SettingsSnapshot {
                 var stats = LatencyStats()
                 for sample: UInt64 in [6_100_000, 7_400_000, 8_200_000, 9_000_000, 12_600_000] { stats.record(sample) }
                 return stats
-            }
+            },
+            displays: { displays.displays },
+            mouseDisplay: { displays.mouseDisplayId() }
         ))
-        let view = NSHostingView(rootView: SettingsView(model: model, initialPane: pane))
+        let view: NSView = if paneName == "group-editor" {
+            NSHostingView(rootView: GroupEditor(
+                draft: GroupDraft(group: DisplayGroup(name: "Desk", rules: [.external, .name("DELL*")]), originalName: "Desk"),
+                displays: displays.displays, takenNames: ["Laptop"], save: { _ in }
+            ))
+        } else {
+            NSHostingView(rootView: SettingsView(model: model, initialPane: pane))
+        }
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 1000),
             styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false
