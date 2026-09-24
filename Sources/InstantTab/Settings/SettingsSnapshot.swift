@@ -47,7 +47,12 @@ enum SettingsSnapshot {
                 return stats
             },
             displays: { displays.displays },
-            mouseDisplay: { displays.mouseDisplayId() }
+            mouseDisplay: { displays.mouseDisplayId() },
+            recentApps: {
+                NSWorkspace.shared.runningApplications
+                    .filter { $0.activationPolicy == .regular && $0 != .current }
+                    .map(\.processIdentifier)
+            }
         ))
         let view: NSView = if paneName == "group-editor" {
             NSHostingView(rootView: GroupEditor(
@@ -58,10 +63,11 @@ enum SettingsSnapshot {
             NSHostingView(rootView: SettingsView(model: model, initialPane: pane))
         }
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 1000),
+            contentRect: NSRect(x: 0, y: 0, width: arguments.contains("--narrow") ? 700 : 900, height: 1100),
             styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false
         )
         window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
         window.contentView = view
         // Drawn normally but kept behind the desktop picture, so nothing flashes on screen.
         window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) - 1)

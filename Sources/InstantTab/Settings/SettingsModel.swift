@@ -13,6 +13,8 @@ final class SettingsModel {
         var latency: () -> LatencyStats
         var displays: () -> [Display]
         var mouseDisplay: () -> UInt32?
+        /// Running apps, most recently used first, for the switcher preview.
+        var recentApps: () -> [Int32]
     }
 
     let configStore: ConfigStore
@@ -27,6 +29,10 @@ final class SettingsModel {
     private(set) var displayName = "this display"
     private(set) var displays: [Display] = []
     private(set) var mouseDisplay: UInt32?
+    private(set) var previewApps: [PreviewApp] = []
+
+    let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+    let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
 
     @ObservationIgnored let apps = AppLookup()
     @ObservationIgnored private let actions: Actions
@@ -66,6 +72,13 @@ final class SettingsModel {
         if displays != self.displays { self.displays = displays }
         let mouse = actions.mouseDisplay()
         if mouse != mouseDisplay { mouseDisplay = mouse }
+        let recent = actions.recentApps().prefix(5)
+        if recent.map({ $0 }) != previewApps.map(\.id) {
+            previewApps = recent.compactMap { pid in
+                guard let app = NSRunningApplication(processIdentifier: pid), let icon = app.icon else { return nil }
+                return PreviewApp(id: pid, name: app.localizedName ?? "App", icon: icon)
+            }
+        }
         if let screen = NSScreen.main, screen.maximumFramesPerSecond > 0 {
             frameMilliseconds = 1000.0 / Double(screen.maximumFramesPerSecond)
             displayName = screen.localizedName
@@ -228,6 +241,14 @@ final class SettingsModel {
 
     func openLoginItemsSettings() {
         LoginItem.openSettings()
+    }
+
+    func resetAll() {
+        configStore.update { $0 = Config() }
+    }
+
+    func openRepository() {
+        if let url = URL(string: "https://github.com/infeace/InstantTab") { NSWorkspace.shared.open(url) }
     }
 
     func openConfigFile() {
