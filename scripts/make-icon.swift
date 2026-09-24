@@ -84,4 +84,8 @@ iconutil.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
 iconutil.arguments = ["-c", "icns", iconset.path, "-o", root.appending(path: "Resources/AppIcon.icns").path]
 try iconutil.run()
 iconutil.waitUntilExit()
-print(iconutil.terminationStatus == 0 ? "wrote Resources/AppIcon.icns" : "iconutil failed")
+guard iconutil.terminationStatus == 0 else {
+    print("iconutil failed")
+    exit(iconutil.terminationStatus)
+}
+print("wrote Resources/AppIcon.icns")

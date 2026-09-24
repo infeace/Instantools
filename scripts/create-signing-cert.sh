@@ -9,7 +9,7 @@ keychain="$HOME/Library/Keychains/login.keychain-db"
 # The system LibreSSL writes PKCS12 files that `security import` accepts without -legacy.
 openssl=/usr/bin/openssl
 
-if security find-identity -v -p codesigning | grep -q "\"$name\""; then
+if grep -q "\"$name\"" <<<"$(security find-identity -v -p codesigning)"; then
     echo "'$name' already exists, nothing to do."
     exit 0
 fi

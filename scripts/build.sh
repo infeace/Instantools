@@ -23,12 +23,12 @@ done
 stop_running() {
     local path_prefix="$1" pid
     for pid in $(pgrep -x InstantTab); do
-        [[ "$(ps -o comm= -p "$pid")" == "$path_prefix"* ]] && kill -TERM "$pid"
+        [[ "$(ps -o comm= -p "$pid" 2>/dev/null)" == "$path_prefix"* ]] && { kill -TERM "$pid" 2>/dev/null || true; }
     done
     for _ in {1..50}; do
         local alive=0
         for pid in $(pgrep -x InstantTab); do
-            [[ "$(ps -o comm= -p "$pid")" == "$path_prefix"* ]] && alive=1
+            [[ "$(ps -o comm= -p "$pid" 2>/dev/null)" == "$path_prefix"* ]] && alive=1
         done
         [[ $alive -eq 0 ]] && return 0
         sleep 0.1
@@ -76,6 +76,8 @@ if [[ $run -eq 1 ]]; then
     if [[ $install -eq 1 ]] && launchctl print "$agent" >/dev/null 2>&1; then
         launchctl kickstart -k "$agent"
     else
+        # Only one copy runs at a time, so stop any other before opening this one.
+        stop_running "/"
         open "$app"
     fi
 fi
