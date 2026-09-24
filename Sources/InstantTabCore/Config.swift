@@ -205,7 +205,7 @@ extension Config {
         if let value = root["appKeys"] {
             guard let bindings = value as? [String: Any] else { throw .invalid("appKeys must be an object of keys and bundle ids") }
             for name in bindings.keys.sorted() {
-                guard name.count == 1, let key = name.lowercased().first, key.isASCII, key.isLowercase || key.isNumber else {
+                guard name.count == 1, let key = name.lowercased().first, AppKey.isLetterOrDigit(key) else {
                     throw .invalid("appKeys '\(name)' must be a single letter or digit")
                 }
                 guard let bundleId = bindings[name] as? String, !bundleId.isEmpty else {

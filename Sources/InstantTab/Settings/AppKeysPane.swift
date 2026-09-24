@@ -58,12 +58,12 @@ struct AppKeysPane: View {
 
     @ViewBuilder private var addButtons: some View {
         Menu("Add Running App") {
-            ForEach(model.runningAppChoices, id: \.bundleId) { app in
+            ForEach(model.runningApps, id: \.bundleId) { app in
                 Button { toggle(.add(bundleId: app.bundleId)) } label: { AppChoiceLabel(app: app) }
             }
         }
         .fixedSize()
-        .disabled(model.runningAppChoices.isEmpty)
+        .disabled(model.runningApps.isEmpty)
         Button("Choose App…") {
             if let bundleId = model.chooseApps(title: "Choose an App", prompt: "Choose", multiple: false).first {
                 toggle(.add(bundleId: bundleId))

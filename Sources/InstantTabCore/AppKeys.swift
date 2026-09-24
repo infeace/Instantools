@@ -9,9 +9,13 @@ extension Config {
             self.bundleId = bundleId
         }
 
-        /// A lowercase ASCII letter or digit. Q and H stay with quit and hide, like native Cmd+Tab.
+        public static func isLetterOrDigit(_ key: Character) -> Bool {
+            key.isASCII && (key.isLowercase || key.isNumber)
+        }
+
+        /// Q and H stay with quit and hide, like native Cmd+Tab.
         public static func isBindable(_ key: Character) -> Bool {
-            key.isASCII && (key.isLowercase || key.isNumber) && !reserved.contains(key)
+            isLetterOrDigit(key) && !reserved.contains(key)
         }
 
         public static let reserved: Set<Character> = ["q", "h"]
@@ -25,7 +29,7 @@ extension Config {
 
     /// Why `key` cannot be bound, or nil if it can. `current` is the key being changed, if any.
     public func appKeyProblem(_ key: Character?, replacing current: Character? = nil) -> AppKeyProblem? {
-        guard let key, key.isASCII, key.isLowercase || key.isNumber else { return .notALetterOrDigit }
+        guard let key, AppKey.isLetterOrDigit(key) else { return .notALetterOrDigit }
         if AppKey.reserved.contains(key) { return .reserved(key) }
         if key != current, let owner = appKeys.first(where: { $0.key == key }) { return .taken(bundleId: owner.bundleId) }
         return nil

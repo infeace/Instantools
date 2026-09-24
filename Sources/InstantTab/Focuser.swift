@@ -37,9 +37,9 @@ final class Focuser: Sendable {
         }
     }
 
-    /// Sending App Exposé again closes it, so it is sent only while App Exposé is still up.
+    /// Only while App Exposé is still up, since the toggle would otherwise open it again.
     private static func closeExpose() {
-        if WindowTracker.dockOverlayIsUp() { SkyLight.showAppExpose() }
+        if WindowTracker.dockOverlayIsUp() { SkyLight.toggleAppExpose() }
     }
 
     private func nextToken() -> Int {

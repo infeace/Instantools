@@ -105,7 +105,7 @@ final class SwitcherController {
                 guard landed || DispatchTime.now().uptimeNanoseconds > deadline else { return }
                 self?.exposeWait?.invalidate()
                 self?.exposeWait = nil
-                if landed { self?.exposeOpened = SkyLight.showAppExpose() }
+                if landed { self?.exposeOpened = SkyLight.toggleAppExpose() }
             }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -167,6 +167,9 @@ final class SwitcherController {
     }
 
     private func begin(reverse: Bool, eventNanoseconds: UInt64) {
+        // A new switch replaces an App Exposé still waiting for the last one to land.
+        exposeWait?.invalidate()
+        exposeWait = nil
         let now = DispatchTime.now().uptimeNanoseconds
         // The key event's own timestamp, when plausible, makes latency include queueing.
         pressNanoseconds = eventNanoseconds > 0 && eventNanoseconds <= now && now - eventNanoseconds < 1_000_000_000

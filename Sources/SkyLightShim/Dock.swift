@@ -5,10 +5,10 @@ extension SkyLight {
 
     private static let coreDockSendNotification = symbol("CoreDockSendNotification", as: CoreDockSendNotification.self)
 
-    /// App Exposé for the frontmost app, as the Dock shows it. False when the call is missing, and then
-    /// the switch simply happens without it.
+    /// Opens App Exposé for the frontmost app, as the Dock shows it, or closes it when it is open. False
+    /// when the call is missing, and then the switch simply happens without it.
     @discardableResult
-    public static func showAppExpose() -> Bool {
+    public static func toggleAppExpose() -> Bool {
         guard let coreDockSendNotification else { return false }
         coreDockSendNotification("com.apple.expose.front.awake" as CFString, 0)
         return true

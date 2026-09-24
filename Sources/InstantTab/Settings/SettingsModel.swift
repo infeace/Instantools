@@ -43,7 +43,7 @@ final class SettingsModel {
     private(set) var mouseDisplay: UInt32?
     private(set) var focusedDisplay: UInt32?
     private(set) var previewApps: [PreviewApp] = []
-    private var runningApps: [AppChoice] = []
+    private(set) var runningApps: [AppChoice] = []
 
     @ObservationIgnored let apps = AppLookup()
     @ObservationIgnored private let actions: Actions
@@ -148,8 +148,6 @@ final class SettingsModel {
             }
         )
     }
-
-    var runningAppChoices: [AppChoice] { runningApps }
 
     var runningAppsToPassThrough: [AppChoice] {
         runningApps.filter { !configStore.config.passesThrough($0.bundleId) }

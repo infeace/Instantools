@@ -65,8 +65,6 @@ final class SwitcherPanel {
         highlight.cornerCurve = .continuous
         nameLayer.alignmentMode = .center
         nameLayer.truncationMode = .end
-        nameLayer.font = Self.nameFont
-        nameLayer.fontSize = Self.nameFont.pointSize
         root.addSublayer(background)
         root.addSublayer(highlight)
         root.addSublayer(nameLayer)
