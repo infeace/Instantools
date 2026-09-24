@@ -34,7 +34,7 @@ public struct LatencyStats: Sendable {
         return "p50 \(Self.milliseconds(p50)) p95 \(Self.milliseconds(p95)) (n=\(count))"
     }
 
-    static func milliseconds(_ nanoseconds: UInt64) -> String {
+    public static func milliseconds(_ nanoseconds: UInt64) -> String {
         let tenths = (nanoseconds + 50_000) / 100_000
         return "\(tenths / 10).\(tenths % 10)ms"
     }

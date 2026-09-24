@@ -1,0 +1,53 @@
+public enum SwitcherFilter {
+    /// The switcher's entries, one per app, most recently used first. Pure and allocation-light:
+    /// this runs on every key press.
+    public static func entries(
+        for snapshot: Snapshot,
+        config: Config,
+        displays: [Display],
+        mouseDisplay: UInt32?
+    ) -> [SwitcherEntry] {
+        let windowsByPid = Dictionary(grouping: snapshot.windows, by: \.pid)
+        let liveDisplays = Set(displays.map(\.id))
+        let target = config.scope == .mouseDisplay ? mouseDisplay : nil
+
+        var listed: [SwitcherEntry] = []
+        var trailing: [SwitcherEntry] = []
+        for app in snapshot.apps {
+            let windows = windowsByPid[app.pid] ?? []
+            if config.isExcluded(bundleId: app.bundleId, hasWindows: !windows.isEmpty) { continue }
+
+            func entry(_ windowId: UInt32?) -> SwitcherEntry {
+                SwitcherEntry(pid: app.pid, bundleId: app.bundleId, name: app.name, windowId: windowId)
+            }
+
+            if let target {
+                if let window = windows.first(where: { DisplayMapping.display(for: $0.frame, in: displays) == target }) {
+                    listed.append(entry(window.id))
+                    continue
+                }
+                // Visible only on other displays.
+                if !windows.isEmpty { continue }
+                // Hidden or minimized apps stay with the display they were last seen on.
+                if let last = snapshot.lastDisplayByPid[app.pid], liveDisplays.contains(last), last != target { continue }
+            } else if let window = windows.first {
+                listed.append(entry(window.id))
+                continue
+            }
+
+            switch config.windowlessApps {
+            case .show: listed.append(entry(nil))
+            case .end: trailing.append(entry(nil))
+            case .hide: break
+            }
+        }
+        return listed + trailing
+    }
+
+    /// Like native Cmd+Tab: forward starts on the previous app, backward starts on the last one.
+    public static func initialIndex(count: Int, firstIsFrontmost: Bool, reverse: Bool) -> Int {
+        guard count > 0 else { return 0 }
+        if reverse { return count - 1 }
+        return firstIsFrontmost && count > 1 ? 1 : 0
+    }
+}

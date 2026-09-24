@@ -1,0 +1,83 @@
+import Foundation
+import Testing
+@testable import InstantTabCore
+
+struct ConfigTests {
+    private func parse(_ text: String) throws(ConfigError) -> Config.Parsed {
+        try Config.parse(Data(text.utf8))
+    }
+
+    @Test func defaultFileParsesToDefaults() throws {
+        let parsed = try parse(Config.defaultFileContents)
+        #expect(parsed.config == Config())
+        #expect(parsed.warnings.isEmpty)
+    }
+
+    @Test func missingKeysKeepDefaults() throws {
+        let parsed = try parse("{ scope: \"mouseDisplay\" }")
+        var expected = Config()
+        expected.scope = .mouseDisplay
+        #expect(parsed.config == expected)
+    }
+
+    @Test func readsEveryKey() throws {
+        let parsed = try parse("""
+        {
+          showDelayMs: 0, scope: "mouseDisplay", windowlessApps: "end", iconSize: 64,
+          exclude: ["com.a", { bundleId: "com.b", when: "noWindows" }],
+        }
+        """)
+        #expect(parsed.config.showDelayMs == 0)
+        #expect(parsed.config.scope == .mouseDisplay)
+        #expect(parsed.config.windowlessApps == .end)
+        #expect(parsed.config.iconSize == 64)
+        #expect(parsed.config.exclude == [
+            .init(bundleId: "com.a"),
+            .init(bundleId: "com.b", when: .noWindows),
+        ])
+    }
+
+    @Test func unknownKeysAreWarnings() throws {
+        let parsed = try parse("{ scoep: \"all\", exclude: [{ bundleId: \"com.a\", wen: \"always\" }] }")
+        #expect(parsed.warnings == ["unknown key 'scoep' ignored", "unknown key 'exclude[0].wen' ignored"])
+    }
+
+    @Test func invalidValuesAreErrors() {
+        #expect(throws: ConfigError.invalid("scope must be one of \"all\", \"mouseDisplay\"")) {
+            try parse("{ scope: \"everywhere\" }")
+        }
+        #expect(throws: ConfigError.invalid("showDelayMs must be a whole number from 0 to 1000")) {
+            try parse("{ showDelayMs: 12.5 }")
+        }
+        #expect(throws: ConfigError.invalid("showDelayMs must be a whole number from 0 to 1000")) {
+            try parse("{ showDelayMs: true }")
+        }
+        #expect(throws: ConfigError.invalid("exclude[0].bundleId must be a non-empty string")) {
+            try parse("{ exclude: [{ when: \"always\" }] }")
+        }
+    }
+
+    @Test func syntaxErrorsAreReported() {
+        #expect {
+            try parse("{ scope: ")
+        } throws: { error in
+            guard case .syntax = error as? ConfigError else { return false }
+            return true
+        }
+    }
+
+    @Test func exclusionMatching() {
+        var config = Config()
+        config.exclude = [
+            .init(bundleId: "com.parallels.*"),
+            .init(bundleId: "com.apple.finder", when: .noWindows),
+        ]
+        #expect(config.isExcluded(bundleId: "com.parallels.desktop", hasWindows: true))
+        #expect(!config.isExcluded(bundleId: "com.parallel", hasWindows: true))
+        #expect(config.isExcluded(bundleId: "com.apple.finder", hasWindows: false))
+        #expect(!config.isExcluded(bundleId: "com.apple.finder", hasWindows: true))
+        #expect(!config.isExcluded(bundleId: nil, hasWindows: false))
+        #expect(config.isExcluded(bundleId: "com.Apple.Finder", hasWindows: false))
+        #expect(config.isExcluded(bundleId: "COM.PARALLELS.desktop", hasWindows: true))
+    }
+}
