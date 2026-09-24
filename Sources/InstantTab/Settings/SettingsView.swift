@@ -3,18 +3,21 @@ import SwiftUI
 
 enum SettingsPane: String, CaseIterable, Identifiable {
     case general
+    case exclusions
 
     var id: Self { self }
 
     var title: String {
         switch self {
         case .general: "General"
+        case .exclusions: "Excluded Apps"
         }
     }
 
     var symbol: String {
         switch self {
         case .general: "gearshape"
+        case .exclusions: "eye.slash"
         }
     }
 }
@@ -37,6 +40,7 @@ struct SettingsView: View {
         } detail: {
             switch selection ?? .general {
             case .general: GeneralPane(model: model)
+            case .exclusions: ExclusionsPane(model: model)
             }
         }
     }

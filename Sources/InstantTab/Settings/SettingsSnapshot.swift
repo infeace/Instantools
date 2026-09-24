@@ -18,8 +18,18 @@ enum SettingsSnapshot {
         app.setActivationPolicy(.prohibited)
         app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
 
-        let store = ConfigStore()
+        let store = ConfigStore(persists: false)
         store.load()
+        if arguments.contains("--sample") {
+            store.update {
+                $0.exclude = [
+                    .init(bundleId: "com.apple.finder", when: .noWindows),
+                    .init(bundleId: "com.apple.Safari"),
+                    .init(bundleId: "com.parallels.*"),
+                    .init(bundleId: "com.example.Missing"),
+                ]
+            }
+        }
         let model = SettingsModel(configStore: store, actions: .init(
             isPaused: { false },
             setPaused: { _ in },

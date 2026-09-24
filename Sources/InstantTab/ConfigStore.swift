@@ -22,6 +22,12 @@ final class ConfigStore {
     @ObservationIgnored private var saveWork: DispatchWorkItem?
     /// What this process last wrote, so its own save is not read back as an outside edit.
     @ObservationIgnored private var lastWritten: Data?
+    @ObservationIgnored private let persists: Bool
+
+    /// A store that does not persist keeps edits in memory only (for Settings snapshots).
+    init(persists: Bool = true) {
+        self.persists = persists
+    }
 
     func start() {
         createDefaultFileIfMissing()
@@ -70,6 +76,7 @@ final class ConfigStore {
     }
 
     private func scheduleSave() {
+        guard persists else { return }
         saveWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated { self?.save() }

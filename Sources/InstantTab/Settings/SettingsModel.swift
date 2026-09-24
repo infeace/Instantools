@@ -24,12 +24,17 @@ final class SettingsModel {
     private(set) var frameMilliseconds = 1000.0 / 60
     private(set) var displayName = "this display"
 
+    @ObservationIgnored let apps = AppLookup()
     @ObservationIgnored private let actions: Actions
     @ObservationIgnored private var timer: Timer?
+    /// AltTab's hide rules, read once when Settings opens.
+    @ObservationIgnored private let altTabRules: [Config.Exclusion]
 
     init(configStore: ConfigStore, actions: Actions) {
         self.configStore = configStore
         self.actions = actions
+        altTabRules = UserDefaults(suiteName: "com.lwouis.alt-tab-macos")?.string(forKey: "exceptions")
+            .map(AltTabImport.exclusions(fromExceptionsJSON:)) ?? []
         refresh()
     }
 
@@ -84,6 +89,72 @@ final class SettingsModel {
             get: { self.loginEnabled },
             set: { enabled in self.setLoginEnabled(enabled) }
         )
+    }
+
+    // MARK: Excluded apps
+
+    struct AppChoice {
+        var bundleId: String
+        var name: String
+        var icon: NSImage?
+    }
+
+    /// Running apps that are not excluded yet, by name.
+    var runningAppsToExclude: [AppChoice] {
+        let excluded = Set(configStore.config.exclude.map { $0.bundleId.lowercased() })
+        let own = Bundle.main.bundleIdentifier?.lowercased()
+        var seen = Set<String>()
+        return NSWorkspace.shared.runningApplications
+            .compactMap { app -> AppChoice? in
+                guard app.activationPolicy == .regular, let bundleId = app.bundleIdentifier else { return nil }
+                let key = bundleId.lowercased()
+                guard key != own, !excluded.contains(key), seen.insert(key).inserted else { return nil }
+                return AppChoice(bundleId: bundleId, name: app.localizedName ?? bundleId, icon: app.icon)
+            }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    var altTabRulesToImport: [Config.Exclusion] {
+        let excluded = Set(configStore.config.exclude.map { $0.bundleId.lowercased() })
+        return altTabRules.filter { !excluded.contains($0.bundleId.lowercased()) }
+    }
+
+    func exclude(_ bundleId: String) {
+        configStore.update { $0.addExclusions([.init(bundleId: bundleId)]) }
+    }
+
+    func removeExclusion(_ bundleId: String) {
+        configStore.update { $0.exclude.removeAll { $0.bundleId == bundleId } }
+    }
+
+    func importAltTab() {
+        let rules = altTabRulesToImport
+        configStore.update { $0.addExclusions(rules) }
+    }
+
+    func exclusionWhen(_ bundleId: String) -> Binding<Config.Exclusion.When> {
+        Binding(
+            get: { self.configStore.config.exclude.first { $0.bundleId == bundleId }?.when ?? .always },
+            set: { when in
+                self.configStore.update { config in
+                    guard let index = config.exclude.firstIndex(where: { $0.bundleId == bundleId }) else { return }
+                    config.exclude[index].when = when
+                }
+            }
+        )
+    }
+
+    func chooseAppsToExclude() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Apps to Exclude"
+        panel.prompt = "Exclude"
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK else { return }
+        let rules = panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }.map { Config.Exclusion(bundleId: $0) }
+        configStore.update { $0.addExclusions(rules) }
     }
 
     // MARK: Actions
