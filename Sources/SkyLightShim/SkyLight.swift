@@ -1,4 +1,4 @@
-import CoreGraphics
+import ApplicationServices
 import Darwin
 
 /// Private SkyLight entry points, resolved at runtime so a missing symbol degrades to nil
@@ -9,8 +9,10 @@ public enum SkyLight {
 
     public static var isAvailable: Bool { handle != nil }
 
+    /// Looks in SkyLight first, then in every image already loaded (for HIServices symbols).
     static func symbol<T>(_ name: String, as type: T.Type) -> T? {
-        guard let handle, let pointer = dlsym(handle, name) else { return nil }
+        let defaultHandle = UnsafeMutableRawPointer(bitPattern: -2) // RTLD_DEFAULT
+        guard let pointer = handle.flatMap({ dlsym($0, name) }) ?? dlsym(defaultHandle, name) else { return nil }
         return unsafeBitCast(pointer, to: type)
     }
 }
