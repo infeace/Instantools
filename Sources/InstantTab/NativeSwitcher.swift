@@ -6,7 +6,6 @@ import SkyLightShim
 /// restored on every way out: normal exit, termination signals, and crashes.
 enum NativeSwitcher {
     /// False when macOS refused, for example because the private call no longer exists.
-    @discardableResult
     static func disable() -> Bool {
         set(enabled: false)
     }
@@ -15,8 +14,11 @@ enum NativeSwitcher {
         _ = set(enabled: true)
     }
 
+    /// No array or loop over the cases: this also runs in the crash handler, where allocating can deadlock.
     private static func set(enabled: Bool) -> Bool {
-        SymbolicHotKey.allCases.map { SkyLight.setEnabled(enabled, $0) }.allSatisfy { $0 }
+        let tab = SkyLight.setEnabled(enabled, .commandTab)
+        let shiftTab = SkyLight.setEnabled(enabled, .commandShiftTab)
+        return tab && shiftTab
     }
 
     nonisolated(unsafe) private static var signalSources: [DispatchSourceSignal] = []

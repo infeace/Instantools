@@ -96,6 +96,12 @@ Enumeration is not the bottleneck. The panel is display-bound once it is pre-cre
 - With "Displays have separate Spaces" on, map windows to displays by Space membership. With it off, use the largest frame intersection.
 - `CGDisplayCreateUUIDFromDisplayID` gives stable ids, but UUIDs can shuffle between identical monitors, after sleep or with DisplayLink. Keep a fallback fingerprint (vendor, model, serial, localized name), and prefer rules (position, orientation, built-in) over ids in user config.
 
+### Dock overlays
+
+- `CoreDockSendNotification("com.apple.expose.front.awake", 0)` toggles App Exposé for the frontmost app, so it opens App Exposé only after a switch has landed and closes it when sent again.
+- While Mission Control or App Exposé is up, `CGWindowList` reports every window as off screen. The Dock shows it with windows at layers 18 to 20 that cover a whole display, which the Dock bar never does.
+- Activating another app does not close App Exposé. Switching first and then closing it lands on the new app; closing first flashes the app App Exposé was showing.
+
 ### Thumbnails
 
 - `CGWindowListCreateImage` is obsoleted in the macOS 15 SDK.

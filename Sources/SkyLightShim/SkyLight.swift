@@ -14,7 +14,7 @@ public enum SkyLight {
     }
 }
 
-public enum SymbolicHotKey: UInt32, CaseIterable, Sendable {
+public enum SymbolicHotKey: UInt32, Sendable {
     case commandTab = 1
     case commandShiftTab = 2
 }

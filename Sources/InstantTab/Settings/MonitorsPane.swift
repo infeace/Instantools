@@ -480,9 +480,7 @@ extension DisplayRule {
         if specific > 0 { parts.append(specific == 1 ? "one specific monitor" : "\(specific) specific monitors") }
         return parts.formatted(.list(type: .or))
     }
-}
 
-extension DisplayRule {
     var uuid: String? {
         if case .uuid(let uuid) = self { uuid } else { nil }
     }

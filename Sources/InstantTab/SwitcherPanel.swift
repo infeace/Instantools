@@ -203,6 +203,7 @@ final class SwitcherPanel {
             let image = entries[index].key.flatMap(Self.badgeImage)
             badge.isHidden = image == nil
             badge.contents = image
+            // The icon's bottom-right corner, clear of where the Dock puts unread badges.
             badge.frame = CGRect(x: tile.frame.maxX - badgeSize, y: tile.frame.minY, width: badgeSize, height: badgeSize)
         }
         placeSelection(selected)
@@ -246,7 +247,6 @@ final class SwitcherPanel {
         return text
     }
 
-    /// Sits on the icon's bottom-right corner, clear of where the Dock puts unread badges.
     static func badgeSize(icon: CGFloat) -> CGFloat {
         min(max((icon * 0.26).rounded(), 14), 30)
     }

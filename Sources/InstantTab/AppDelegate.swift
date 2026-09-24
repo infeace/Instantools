@@ -22,9 +22,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private var isPaused = false
     private var passThrough = BundleIdMatcher([])
-    /// A pass-through app is in front, so the hotkeys are let go while native Cmd+Tab stays off, and the
-    /// key reaches that app.
-    private var passingThrough = false
     private lazy var settings = SettingsWindowController(
         makeModel: { [unowned self] in
             SettingsModel(configStore: configStore, actions: .init(
@@ -61,6 +58,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.controller.resolveGroups()
             self?.tracker.refreshWindows()
         }
+        hotKeys.onPress = { [weak self] action, eventNanoseconds in
+            self?.controller.hotKeyPressed(action, eventNanoseconds: eventNanoseconds)
+        }
+        // Before the config loads, so a pass-through app already in front gets its Cmd+Tab back.
+        isPaused = !takeOver()
         configStore.onChange = { [weak self] config in
             guard let self else { return }
             icons.setIconSize(config.iconSize)
@@ -75,16 +77,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             controller.modelChanged()
         }
         tracker.start()
-
-        hotKeys.onPress = { [weak self] action, eventNanoseconds in
-            self?.controller.hotKeyPressed(action, eventNanoseconds: eventNanoseconds)
-        }
-        isPaused = !takeOver()
-        applyPassThrough()
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.applyPassThrough() }
+        ) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            MainActor.assumeIsolated { self?.applyPassThrough(front: app) }
         }
         startTaps()
         controller.warmUp()
@@ -127,7 +124,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func setPaused(_ paused: Bool) {
         guard paused != isPaused else { return }
-        passingThrough = false
         if paused {
             hotKeys.unregister()
             NativeSwitcher.restore()
@@ -138,17 +134,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func applyPassThrough() {
-        let pass = !isPaused && passThrough.matches(NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
-        guard pass != passingThrough else { return }
-        passingThrough = pass
-        if pass {
+    /// While a pass-through app is in front, the hotkeys are let go with native Cmd+Tab still off, so the key
+    /// reaches that app. Registering and unregistering do nothing when already done.
+    private func applyPassThrough(front: NSRunningApplication? = NSWorkspace.shared.frontmostApplication) {
+        guard !isPaused else { return }
+        if passThrough.matches(front?.bundleIdentifier) {
             hotKeys.unregister()
         } else if !hotKeys.register() {
             // Without the hotkeys and with native Cmd+Tab off, the Mac would have no switcher at all.
             NativeSwitcher.restore()
             isPaused = true
-            passingThrough = false
             Diagnostics.log.error("could not take Cmd+Tab back from a pass-through app, native switcher restored")
         }
     }
