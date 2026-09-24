@@ -25,6 +25,14 @@ struct SwitcherSessionTests {
         #expect(session.selectedIndex == 0)
     }
 
+    @Test func selectIgnoresOutOfRange() {
+        var session = SwitcherSession(entries: entries([1, 2, 3]), selectedIndex: 0)
+        session.select(2)
+        #expect(session.selectedIndex == 2)
+        session.select(3)
+        #expect(session.selectedIndex == 2)
+    }
+
     @Test func clampsInitialSelection() {
         #expect(SwitcherSession(entries: entries([1, 2]), selectedIndex: 5).selectedIndex == 1)
         #expect(SwitcherSession(entries: [], selectedIndex: 3).selected == nil)
@@ -66,5 +74,33 @@ struct DisplayMappingTests {
 
     @Test func offScreenIsNil() {
         #expect(DisplayMapping.display(for: CGRect(x: -5000, y: 0, width: 100, height: 100), in: displays) == nil)
+    }
+}
+
+struct SessionKeyTests {
+    @Test func mapsFixedKeys() {
+        #expect(SessionKey(keycode: 53, characters: "\u{1b}") == .cancel)
+        #expect(SessionKey(keycode: 123, characters: "\u{f702}") == .previous)
+        #expect(SessionKey(keycode: 124, characters: "\u{f703}") == .next)
+    }
+
+    @Test func lettersFollowTheLayout() {
+        #expect(SessionKey(keycode: 12, characters: "q") == .quit)
+        #expect(SessionKey(keycode: 4, characters: "H") == .hide)
+        #expect(SessionKey(keycode: 50, characters: "`") == .previous)
+        // AZERTY: the US Q position types A, and Q sits where US A is.
+        #expect(SessionKey(keycode: 12, characters: "a") == nil)
+        #expect(SessionKey(keycode: 0, characters: "q") == .quit)
+    }
+
+    @Test func nonLatinLayoutsUseTheUSPosition() {
+        #expect(SessionKey(keycode: 12, characters: "я") == .quit)
+        #expect(SessionKey(keycode: 4, characters: "") == .hide)
+        #expect(SessionKey(keycode: 7, characters: "ь") == nil)
+    }
+
+    @Test func onlyMovesRepeat() {
+        #expect(SessionKey.next.repeats && SessionKey.previous.repeats)
+        #expect(!SessionKey.quit.repeats && !SessionKey.hide.repeats)
     }
 }

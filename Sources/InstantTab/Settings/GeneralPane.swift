@@ -68,7 +68,7 @@ struct GeneralPane: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Allow Accessibility access")
                         .font(.headline)
-                    Text("Cmd+Tab already works. With access, Esc cancels, the arrow keys move, and the right window of an app comes forward.")
+                    Text("Cmd+Tab already works. With access, Esc, the arrow keys, Q and H work in the switcher, and the right window of an app comes forward.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

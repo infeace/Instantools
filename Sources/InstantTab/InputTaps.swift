@@ -1,12 +1,7 @@
 import CoreGraphics
 import Foundation
+import InstantTabCore
 import os
-
-enum SessionKey: Sendable {
-    case cancel
-    case previous
-    case next
-}
 
 /// On their own thread so a busy main thread never delays the keyboard. The session tap swallows keys, so
 /// it is on only while the switcher is open (always on, it breaks input methods), and sits at the HID
@@ -96,15 +91,14 @@ final class InputTaps: @unchecked Sendable {
         guard type == .keyDown, event.flags.contains(.maskCommand), sessionActive.withLock({ $0 }) else { return false }
         let keycode = event.getIntegerValueField(.keyboardEventKeycode)
         guard keycode != 48 else { return false } // Tab belongs to the Carbon hotkeys.
-        let key: SessionKey? = switch keycode {
-        case 53: .cancel
-        case 123: .previous
-        case 124: .next
-        default: nil
-        }
-        // Every other Cmd+key is swallowed too: the previous app is still key, and Cmd+Q or Cmd+W would
-        // otherwise reach it while the switcher is open.
-        if let key { onSessionKey(key) }
+        var length = 0
+        var buffer = [UniChar](repeating: 0, count: 4)
+        event.keyboardGetUnicodeString(maxStringLength: buffer.count, actualStringLength: &length, unicodeString: &buffer)
+        let key = SessionKey(keycode: keycode, characters: String(utf16CodeUnits: buffer, count: length))
+        let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+        // Every other Cmd+key is swallowed too: the previous app is still key, and Cmd+W would otherwise
+        // reach it while the switcher is open.
+        if let key, key.repeats || !isRepeat { onSessionKey(key) }
         return true
     }
 }

@@ -115,7 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controller.attach(taps)
         if Permissions.accessibility, taps.start() { return }
 
-        // Until Accessibility is granted, releases are caught by polling and Esc and the arrows do nothing.
+        // Until Accessibility is granted, releases are caught by polling and the in-switcher keys do nothing.
         Permissions.requestAccessibility()
         permissionPoll = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {

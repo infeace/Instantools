@@ -13,6 +13,7 @@ final class SwitcherPanel {
 
     private let icons: IconCache
     private let panel: NSPanel
+    private let mouseView = MouseView()
     private let root = CALayer()
     private let background = CALayer()
     private let highlight = CALayer()
@@ -23,8 +24,11 @@ final class SwitcherPanel {
     private var panelWidth: CGFloat = 0
     private var entries: [SwitcherEntry] = []
     private var isVisible = false
+    private var pressedIndex: Int?
 
-    var onShown: ((NSView) -> Void)?
+    var onHover: ((Int) -> Void)?
+    var onClick: ((Int) -> Void)?
+    var view: NSView { mouseView }
 
     init(icons: IconCache) {
         self.icons = icons
@@ -37,12 +41,13 @@ final class SwitcherPanel {
         panel.hidesOnDeactivate = false
         panel.animationBehavior = .none
         panel.isReleasedWhenClosed = false
-        panel.ignoresMouseEvents = true
+        // Hiding InstantTab from its own switcher must not hide the switcher.
+        panel.canHide = false
 
-        let view = NSView()
-        view.layer = root
-        view.wantsLayer = true
-        panel.contentView = view
+        mouseView.layer = root
+        mouseView.wantsLayer = true
+        mouseView.onMouse = { [weak self] type, point in self?.handleMouse(type, at: point) }
+        panel.contentView = mouseView
 
         background.cornerRadius = 22
         background.cornerCurve = .continuous
@@ -73,7 +78,6 @@ final class SwitcherPanel {
         layout(entries: entries, selected: selected, on: screen, iconSize: iconSize)
         panel.orderFrontRegardless()
         isVisible = true
-        if let view = panel.contentView { onShown?(view) }
     }
 
     func update(entries: [SwitcherEntry], selected: Int, on screen: NSScreen, iconSize: CGFloat) {
@@ -93,6 +97,32 @@ final class SwitcherPanel {
         guard isVisible else { return }
         panel.orderOut(nil)
         isVisible = false
+        pressedIndex = nil
+    }
+
+    /// Only real pointer movement selects, so a panel opening under a resting pointer keeps its selection.
+    private func handleMouse(_ type: NSEvent.EventType, at point: CGPoint) {
+        guard isVisible else { return }
+        let index = index(at: point)
+        switch type {
+        case .mouseMoved:
+            if let index { onHover?(index) }
+        case .leftMouseDown:
+            pressedIndex = index
+            if let index { onHover?(index) }
+        case .leftMouseUp:
+            defer { pressedIndex = nil }
+            if let index, index == pressedIndex { onClick?(index) }
+        default:
+            break
+        }
+    }
+
+    private func index(at point: CGPoint) -> Int? {
+        let row = CGRect(x: Metrics.padding, y: Metrics.padding + Metrics.nameHeight, width: CGFloat(entries.count) * tileSize, height: tileSize)
+        guard tileSize > 0, row.contains(point) else { return nil }
+        let index = Int((point.x - Metrics.padding) / tileSize)
+        return entries.indices.contains(index) ? index : nil
     }
 
     private func layout(entries: [SwitcherEntry], selected: Int, on screen: NSScreen, iconSize: CGFloat) {
@@ -160,5 +190,25 @@ final class SwitcherPanel {
         let nameX = min(max(x + tileSize / 2 - nameWidth / 2, Metrics.padding), panelWidth - Metrics.padding - nameWidth)
         nameLayer.frame = CGRect(x: nameX, y: Metrics.padding, width: nameWidth, height: Metrics.nameHeight - 6)
         nameLayer.string = entries[index].name
+    }
+}
+
+private final class MouseView: NSView {
+    var onMouse: ((NSEvent.EventType, CGPoint) -> Void)?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeAlways, .inVisibleRect], owner: self))
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseMoved(with event: NSEvent) { forward(event) }
+    override func mouseDown(with event: NSEvent) { forward(event) }
+    override func mouseUp(with event: NSEvent) { forward(event) }
+
+    private func forward(_ event: NSEvent) {
+        onMouse?(event.type, convert(event.locationInWindow, from: nil))
     }
 }

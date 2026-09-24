@@ -32,7 +32,7 @@ scripts/create-signing-cert.sh      # once per Mac: a local signing identity, so
 scripts/build.sh --install --run    # build, copy to ~/Applications and launch
 ```
 
-Then allow **Accessibility** when asked. Cmd+Tab works without it, but Esc, the arrow keys and raising the right window need it. Quit any other Cmd+Tab replacement first.
+Then allow **Accessibility** when asked. Cmd+Tab works without it, but the in-switcher keys and raising the right window need it. Quit any other Cmd+Tab replacement first.
 
 Requires macOS 14 or later and a Swift 6 toolchain (the Xcode command line tools are enough).
 
@@ -42,7 +42,9 @@ Requires macOS 14 or later and a Swift 6 toolchain (the Xcode command line tools
 |---|---|
 | **Cmd+Tab** | Hold Cmd, press Tab to move, release to switch |
 | **Quick Cmd+Tab** | Jump to the previous app without drawing anything |
-| **Shift, arrows** | Move back, or move with the arrow keys |
+| **Shift, \`, arrows** | Move back, or move with the arrow keys |
+| **Q, H** | Quit or hide the selected app |
+| **Mouse** | Point to select, click to switch |
 | **Esc** | Cancel |
 
 Everything else lives in **Settings** (menu bar icon, then Settings…).

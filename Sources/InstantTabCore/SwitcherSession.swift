@@ -17,6 +17,11 @@ public struct SwitcherSession: Sendable, Equatable {
         selectedIndex = ((selectedIndex + delta) % count + count) % count
     }
 
+    public mutating func select(_ index: Int) {
+        guard entries.indices.contains(index) else { return }
+        selectedIndex = index
+    }
+
     /// Keeps the selected app selected when it is still listed.
     public mutating func reconcile(with newEntries: [SwitcherEntry]) {
         let selectedPid = selected?.pid
