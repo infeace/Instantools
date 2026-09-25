@@ -79,9 +79,13 @@ enum SettingsSnapshot {
             handlesCmdTab: true
         )
         let layout = LayoutSwitcherStatus(tapRunning: true)
-        // This Mac's own, since reading them changes nothing.
+        // This Mac's own, since reading them changes nothing, except with --sample, which shows nothing personal.
         let layouts = KeyboardLayoutWatcher()
         layouts.start()
+        let sampleLayouts = [
+            KeyboardLayout(id: "com.apple.keylayout.ABC", name: "ABC", icon: nil, badge: "EN"),
+            KeyboardLayout(id: "com.apple.keylayout.German", name: "German", icon: nil, badge: "DE"),
+        ]
         let model = SettingsModel(configStore: store, actions: .init(
             toolState: { _ in sample ? .running : .off },
             isEnabled: { _ in sample },
@@ -90,8 +94,8 @@ enum SettingsSnapshot {
             requestStatus: {},
             appSwitcher: { sample ? switcher : nil },
             layoutSwitcher: { sample ? layout : nil },
-            layouts: { layouts.layouts },
-            currentLayout: { layouts.currentId },
+            layouts: { sample ? sampleLayouts : layouts.layouts },
+            currentLayout: { sample ? sampleLayouts[0].id : layouts.currentId },
             selectLayout: { _ in },
             displays: { displays.displays },
             mouseDisplay: { displays.mouseDisplayId() },

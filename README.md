@@ -25,7 +25,7 @@ Instantools is one menu bar app with two tools. Turn on only the ones you want:
 | <img src="Resources/InstantTab.png" width="48" alt=""> | **InstantTab** | An app switcher that appears the moment you press Cmd+Tab |
 | <img src="Resources/InstantLang.png" width="48" alt=""> | **InstantLang** | Switches the keyboard layout with Control+Command, pressed in either order |
 
-Both come with one Settings window, one login item and one set of permissions. Each tool runs in its own process, so one never slows or stops another. Instantools succeeds the standalone [InstantTab](https://github.com/infeace/InstantTab) and InstantLang apps, and takes over from them on its first launch.
+Both come with one Settings window, one login item and one set of permissions. Each tool runs in its own process, so one never slows or stops another. Instantools succeeds the standalone InstantTab and InstantLang apps, and takes over from them on its first launch.
 
 ## InstantTab
 
@@ -161,3 +161,7 @@ Panes are `general`, `switcher`, `keys`, `monitors`, `exclusions`, `language` (t
 - [ ] Keyboard navigation in Settings
 - [ ] One entry per window and per-app rules (deferred)
 - [ ] Multiple shortcuts with their own scope (deferred)
+
+## License
+
+MIT, see [LICENSE](LICENSE).
