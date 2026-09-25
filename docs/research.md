@@ -1,4 +1,6 @@
-# InstantTab research
+# Instantools research
+
+This began as the research for InstantTab, whose switcher is now the Cmd+Tab tool of Instantools, and it is kept as written. The sections on keyboard layout switching and on tool processes cover the Language tool and the one-process-per-tool design.
 
 Research date: 2026-09-24. Measurements were taken on an M1 Pro running macOS 26.5.1 with two external displays at 75 Hz. The app itself must stay generic: nothing in the design depends on this machine or display layout.
 
@@ -178,6 +180,32 @@ Each shortcut is a profile: keys, scope, entry mode and filters. Example:
 4. Windows on other Spaces need a brute-force AX token scan. It is deferred to phase 2.
 5. Thumbnails cost WindowServer load and permission prompts. They are off by default and come later.
 
+## Keyboard layout switching
+
+The Language tool switches layouts on Control+Command. Measured on the same Mac:
+
+- `TISSelectInputSource` takes a median of 6 ms, with a maximum of about 21 to 27 ms. Other processes see the new layout 3 to 7 ms later, as long as their run loop is serviced. TIS is not thread safe and must run on the main thread.
+- Karabiner's `select_input_source` goes through a socket to a separate user process, and `input_source_if` reads a cached language that is updated asynchronously, so a quick second toggle can read the old layout and do nothing.
+- Karabiner 16.1 grabs the keyboards again after every wake, which leaves gaps of several seconds in which a chord does nothing.
+- The switch fires on the press that completes the chord and is never undone by later keys: when typing fast, the next letter often lands while the chord is still down.
+- Secure Input (password fields, Terminal's secure keyboard entry) hides key presses from event taps but not modifier changes, so a tap that only watches modifiers keeps working.
+
+So the tool runs a listen-only tap for modifier changes on the main run loop and switches inside the callback, with no hop to another thread or process. It tracks the previous layout itself rather than waiting for the notification, and checks each switch against what macOS reports, retrying once.
+
+## Tool processes and permissions
+
+Each tool is its own process, started by the host. Measured on macOS 26.5.1 with a probe app:
+
+| Fact | What Instantools does |
+|---|---|
+| A process started by the app with `Process` or `posix_spawn`, a plain executable or one inside a nested .app, and its own children, count as the app to TCC (its responsible process). They get its Accessibility, Input Monitoring and event posting grants, verified by real event delivery, AX calls, active and listen taps, `TISSelectInputSource` and windows, and keep them after the app exits. | Tools are started only by the host and share its one set of permissions. |
+| A helper opened through LaunchServices (`NSWorkspace.openApplication`, `open`), a launchd job, or a spawn with responsibility disclaimed is its own TCC identity, with its own prompts and Privacy entries. | Tools are never opened, never login items, and refuse to run unless the host started them. |
+| With Accessibility granted and no Input Monitoring record, listen-only keyboard taps work. Input Monitoring turned off explicitly blocks them even with Accessibility on. With no permission, a tap for modifier changes is created but receives nothing. | Language needs Input Monitoring only without Accessibility, and checks for either before creating its tap. |
+| An idle AppKit tool process with a window costs about 9 MB (phys_footprint). | One process per tool is cheap. |
+| Rebuilds signed with the same identity keep TCC grants. | Every build is signed with one local identity. |
+
+A tool whose stdin reaches end of file keeps working for 15 seconds and then exits normally, so Cmd+Tab and layout switching survive a host crash while launchd relaunches the host, and a force-quit host leaves no tools behind for long. The new host stops any tool still running from before, then starts its own.
+
 ## Sources
 
 - AltTab source: https://github.com/lwouis/alt-tab-macos (commit 56891e0, v11.7.1), issues 171, 4507, 4959, 5109, 5177, 5585, 5721, 5766, 5786, 5861, 5900, 5911, 6028, 6051, 6053, 6064
@@ -185,6 +213,7 @@ Each shortcut is a profile: keys, scope, entry mode and filters. Example:
 - AeroSpace: https://github.com/nikitabobko/AeroSpace
 - DockDoor: https://github.com/ejbills/DockDoor (KeybindHelper.swift, EventTapThread.swift, issue 1589)
 - Hammerspoon: https://github.com/Hammerspoon/hammerspoon (issue 1936, hs.window.filter docs)
+- Karabiner-Elements: https://github.com/pqrs-org/Karabiner-Elements (select_input_source, input_source_if)
 - Activation changes in macOS 14: https://developer.apple.com/videos/play/wwdc2023/10054/
 - TCC and stable signing: https://developer.apple.com/forums/thread/730043
 - Event tap permissions: https://developer.apple.com/forums/thread/707680
