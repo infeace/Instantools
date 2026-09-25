@@ -1,22 +1,19 @@
 import AppKit
 import InstantoolsCore
 import InstantoolsKit
-import LayoutSwitcherCore
 
 @MainActor
 final class LayoutSwitcherDelegate: NSObject, NSApplicationDelegate {
     private let sources = InputSources()
     private let tap = ChordTap()
-    private var permissionPoll: Timer?
+    private lazy var tapPoll = PermissionPoll(
+        allowed: { Permissions.inputMonitoring }, start: { [unowned self] in tap.start() }, thenLog: "permission granted, event tap running"
+    )
     private lazy var channel = ToolChannel { [unowned self] request in
         switch request.request {
-        case .status: ToolMessage(id: request.id, layoutSwitcher: LayoutSwitcherStatus(tapRunning: tap.isRunning, layouts: sources.names))
+        case .status: ToolMessage(layoutSwitcher: LayoutSwitcherStatus(tapRunning: tap.isRunning, layouts: sources.names))
         }
     }
-    /// Keeps App Nap from delaying the tap callback.
-    private let activity = ProcessInfo.processInfo.beginActivity(
-        options: .userInitiatedAllowingIdleSystemSleep, reason: "Layout switches must be instant"
-    )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Diagnostics.log.notice("launched")
@@ -26,7 +23,10 @@ final class LayoutSwitcherDelegate: NSObject, NSApplicationDelegate {
         let workspace = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification] {
             workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.tap.recover() }
+                MainActor.assumeIsolated {
+                    guard let self, !self.tapPoll.isPolling else { return }
+                    if !self.tap.recover() { self.tapPoll.run() }
+                }
             }
         }
         channel.start()
@@ -36,13 +36,6 @@ final class LayoutSwitcherDelegate: NSObject, NSApplicationDelegate {
     private func startTap() {
         if tap.start() { return }
         if ProcessInfo.processInfo.environment[ToolLaunch.askInputMonitoringKey] != "0" { Permissions.requestInputMonitoring() }
-        permissionPoll = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.tap.start() else { return }
-                self.permissionPoll?.invalidate()
-                self.permissionPoll = nil
-                Diagnostics.log.notice("permission granted, event tap running")
-            }
-        }
+        tapPoll.run()
     }
 }

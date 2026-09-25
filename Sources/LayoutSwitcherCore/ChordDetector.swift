@@ -14,12 +14,12 @@ public struct Modifiers: OptionSet, Sendable, Hashable {
 
     /// From a CGEventFlags raw value. Only the device-independent bits, so left and right keys count the same.
     public init(eventFlags: UInt64) {
-        let bits: [(UInt64, Modifiers)] = [
-            (0x40000, .control), (0x100000, .command), (0x20000, .shift), (0x80000, .option), (0x800000, .function),
-        ]
-        self = bits.reduce(into: []) { result, bit in
-            if eventFlags & bit.0 != 0 { result.insert(bit.1) }
-        }
+        self = []
+        if eventFlags & 0x40000 != 0 { insert(.control) }
+        if eventFlags & 0x100000 != 0 { insert(.command) }
+        if eventFlags & 0x20000 != 0 { insert(.shift) }
+        if eventFlags & 0x80000 != 0 { insert(.option) }
+        if eventFlags & 0x800000 != 0 { insert(.function) }
     }
 }
 

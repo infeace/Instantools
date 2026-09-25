@@ -12,12 +12,16 @@ public enum ToolRuntime {
         }
         // A reply written after the host is gone must fail the write, not end the tool.
         signal(SIGPIPE, SIG_IGN)
+        // Keeps App Nap from stretching the tool's timers and delaying its event callbacks.
+        let activity = ProcessInfo.processInfo.beginActivity(
+            options: .userInitiatedAllowingIdleSystemSleep, reason: "\(tool.name) must respond instantly"
+        )
         let app = NSApplication.shared
         let delegate = makeDelegate()
         app.delegate = delegate
         // Tools have no Info.plist to set LSUIElement.
         app.setActivationPolicy(.accessory)
-        withExtendedLifetime(delegate) { app.run() }
+        withExtendedLifetime((delegate, activity)) { app.run() }
     }
 }
 

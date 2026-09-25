@@ -10,16 +10,17 @@ final class ChordTap {
     private var detector = ChordDetector()
     private var tap: CFMachPort?
 
+    /// Input Monitoring switched off after start leaves the tap running but deaf. The host checks for that
+    /// itself, since the check takes about 10 ms on this run loop.
     var isRunning: Bool {
         guard let tap else { return false }
         return CFMachPortIsValid(tap) && CGEvent.tapIsEnabled(tap: tap)
     }
 
-    /// False until Input Monitoring or Accessibility is granted, since either lets a tap listen. Without them
-    /// macOS still creates the tap, minus the keyboard.
+    /// False until the Input Monitoring check passes, which Accessibility alone also does unless Input
+    /// Monitoring was switched off. Without it macOS still creates the tap, minus the keyboard.
     func start() -> Bool {
         if let tap, CFMachPortIsValid(tap) { return true }
-        // Also true with only Accessibility, unless Input Monitoring was switched off, which leaves a tap deaf.
         guard Permissions.inputMonitoring else { return false }
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly,
@@ -39,15 +40,20 @@ final class ChordTap {
         return true
     }
 
-    /// After sleep or a user switch, events may have been missed and macOS may have turned the tap off.
-    func recover() {
+    /// After sleep or a user switch, events may have been missed and macOS may have turned the tap off. False
+    /// when that leaves no tap, so the caller can wait for the permission again.
+    func recover() -> Bool {
         detector.reset()
         if let tap, !CFMachPortIsValid(tap) { self.tap = nil }
         if let tap {
             if !CGEvent.tapIsEnabled(tap: tap) { CGEvent.tapEnable(tap: tap, enable: true) }
-        } else if !start() {
-            Diagnostics.log.error("could not recreate the event tap")
+            return true
         }
+        guard start() else {
+            Diagnostics.log.error("could not recreate the event tap")
+            return false
+        }
+        return true
     }
 
     private func handle(_ type: CGEventType, flags: UInt64) {

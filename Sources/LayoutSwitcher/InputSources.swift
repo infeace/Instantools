@@ -5,41 +5,53 @@ import LayoutSwitcherCore
 
 /// Keyboard layouts through Text Input Sources, which is not thread safe, so all of it runs on the main thread.
 @MainActor
-final class InputSources {
+final class InputSources: NSObject {
     private var layouts: [(id: String, source: TISInputSource)] = []
+    /// The ids of `layouts`, kept so a switch builds no array.
+    private var layoutIds: [String] = []
     private var history = LayoutHistory(current: InputSources.currentId())
 
     var names: [String] {
         layouts.map { Self.name($0.source) }
     }
 
-    init() {
+    override init() {
+        super.init()
         reload()
+        // Delivered at once: by default distributed notifications wait while the app is inactive, and an
+        // accessory tool never becomes active.
         let center = DistributedNotificationCenter.default()
         center.addObserver(
-            forName: Notification.Name(kTISNotifyEnabledKeyboardInputSourcesChanged as String), object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.reload() }
-        }
+            self, selector: #selector(enabledSourcesChanged),
+            name: Notification.Name(kTISNotifyEnabledKeyboardInputSourcesChanged as String), object: nil,
+            suspensionBehavior: .deliverImmediately
+        )
         center.addObserver(
-            forName: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String), object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.history.observe(Self.currentId()) }
-        }
+            self, selector: #selector(selectedSourceChanged),
+            name: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String), object: nil,
+            suspensionBehavior: .deliverImmediately
+        )
+    }
+
+    @objc private func enabledSourcesChanged() {
+        reload()
+    }
+
+    @objc private func selectedSourceChanged() {
+        history.observe(Self.currentId())
     }
 
     func switchLayout() {
         let current = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
         history.observe(Self.id(current))
-        guard let targetId = LayoutPicker.target(among: layouts.map(\.id), current: history.current, previous: history.previous),
+        guard let targetId = LayoutPicker.target(among: layoutIds, current: history.current, previous: history.previous),
               let target = layouts.first(where: { $0.id == targetId })?.source
         else { return }
-        select(target)
+        select(target, id: targetId)
     }
 
     /// Checked against what macOS reports straight after, with one retry, so a dropped switch is not silent.
-    private func select(_ source: TISInputSource) {
-        let wanted = Self.id(source)
+    private func select(_ source: TISInputSource, id wanted: String) {
         for attempt in 1...2 {
             let status = TISSelectInputSource(source)
             if status == noErr, Self.currentId() == wanted {
@@ -61,7 +73,8 @@ final class InputSources {
         layouts = sources
             .filter { Self.string($0, kTISPropertyInputSourceType).map(types.contains) ?? false }
             .map { (Self.id($0), $0) }
-        Diagnostics.log.notice("layouts: \(self.layouts.map(\.id).joined(separator: ", "), privacy: .public)")
+        layoutIds = layouts.map(\.id)
+        Diagnostics.log.notice("layouts: \(self.layoutIds.joined(separator: ", "), privacy: .public)")
     }
 
     private static func currentId() -> String {

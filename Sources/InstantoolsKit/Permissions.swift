@@ -17,7 +17,7 @@ public enum Permissions {
         }
     }
 
-    /// Accessibility allows listening too, so this is only needed without it.
+    /// Also true with Accessibility alone, and false when Input Monitoring was switched off even with Accessibility on.
     public static var inputMonitoring: Bool { CGPreflightListenEventAccess() }
 
     public static func requestInputMonitoring() {
