@@ -272,7 +272,7 @@ private struct DoneStep: View {
     let model: WelcomeModel
 
     var body: some View {
-        let tools = ToolId.allCases.filter(model.isChosen)
+        let tools = ToolId.allCases.filter { model.isChosen($0) }
         VStack(spacing: 0) {
             StepHeader(
                 title: "You're set",

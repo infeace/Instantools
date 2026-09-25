@@ -196,7 +196,7 @@ private struct SidebarHeader: View {
     }
 
     private var summary: (text: String, color: Color) {
-        let enabled = ToolId.allCases.filter(model.isEnabled)
+        let enabled = ToolId.allCases.filter { model.isEnabled($0) }
         if enabled.contains(where: { if case .failed = model.state(of: $0) { true } else { false } }) {
             return ("A tool stopped", .red)
         }
@@ -204,7 +204,7 @@ private struct SidebarHeader: View {
         if let inactive = enabled.first(where: { model.state(of: $0) == .running && !model.isActive($0) }) {
             return (inactive.inactiveStatus, .orange)
         }
-        return enabled.allSatisfy(model.isActive) ? ("Active", .green) : ("Starting", .orange)
+        return enabled.allSatisfy({ model.isActive($0) }) ? ("Active", .green) : ("Starting", .orange)
     }
 }
 

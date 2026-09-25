@@ -124,8 +124,9 @@ struct LatencyBars: View {
             let slot = size.width / 40
             let first = 40 - values.count
             for (index, value) in values.enumerated() {
-                let height = max(2, size.height * value / top)
-                let rect = CGRect(x: CGFloat(first + index) * slot + 1, y: size.height - height, width: slot - 2, height: height)
+                let height = max(2, size.height * CGFloat(value / top))
+                let x = CGFloat(first + index) * slot + 1
+                let rect = CGRect(x: x, y: size.height - height, width: slot - 2, height: height)
                 let color: Color = value <= frameMilliseconds ? .green : value <= frameMilliseconds * 2 ? .yellow : .orange
                 context.fill(Path(roundedRect: rect, cornerRadius: 1.5), with: .color(color.opacity(0.85)))
             }
