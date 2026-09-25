@@ -67,7 +67,7 @@ enum FirstLaunch {
         do {
             let data = try Data(contentsOf: oldConfigURL)
             try FileManager.default.createDirectory(at: ConfigStore.directory, withIntermediateDirectories: true)
-            try data.write(to: ConfigStore.fileURL, options: .atomic)
+            try data.write(to: ConfigStore.writeTarget(for: ConfigStore.fileURL), options: .atomic)
             return true
         } catch {
             Diagnostics.log.error("could not copy the standalone InstantTab app's config: \(error.localizedDescription, privacy: .public)")

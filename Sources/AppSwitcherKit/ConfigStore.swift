@@ -26,15 +26,18 @@ public final class ConfigStore {
     /// The file as last read or written, so a save can tell that someone else has changed it since.
     @ObservationIgnored private var knownContents: Data?
     @ObservationIgnored private let persists: Bool
+    @ObservationIgnored private let directory: URL
+    @ObservationIgnored private let file: URL
 
-    public init(persists: Bool = true) {
+    /// `directory` is for tests. The host and the tools use the one under ~/.config.
+    public init(persists: Bool = true, directory: URL = ConfigStore.directory) {
         self.persists = persists
+        self.directory = directory
+        file = directory.appending(path: Self.fileURL.lastPathComponent)
     }
 
     public func start() {
-        load()
-        directorySource = watch(Self.directory.path, events: .write)
-        watchFile()
+        reload()
     }
 
     public func update(_ edit: (inout Config) -> Void) {
@@ -72,9 +75,12 @@ public final class ConfigStore {
         // A deleted file comes back with the defaults, as on first launch.
         createDefaultFileIfMissing()
         // Only the host creates the file, so a reader that finds none uses the defaults the host writes.
-        let missing = !persists && !FileManager.default.fileExists(atPath: Self.fileURL.path)
-        guard let data = missing ? Data(Config.defaultFileContents.utf8) : try? Data(contentsOf: Self.fileURL) else {
-            error = "cannot read \(Self.fileURL.path)"
+        let missing = !persists && !FileManager.default.fileExists(atPath: file.path)
+        guard let data = missing ? Data(Config.defaultFileContents.utf8) : try? Data(contentsOf: file) else {
+            let target = Self.writeTarget(for: file)
+            error = target == file
+                ? "cannot read \(file.path)"
+                : "cannot read \(file.path), a link to \(target.path), which is missing"
             fileIsBroken = true
             return
         }
@@ -99,11 +105,11 @@ public final class ConfigStore {
     /// `.json5` has no default app on most Macs, so TextEdit is the fallback.
     public func openInEditor() {
         flush()
-        if NSWorkspace.shared.urlForApplication(toOpen: Self.fileURL) != nil {
-            NSWorkspace.shared.open(Self.fileURL)
+        if NSWorkspace.shared.urlForApplication(toOpen: file) != nil {
+            NSWorkspace.shared.open(file)
         } else {
             NSWorkspace.shared.open(
-                [Self.fileURL], withApplicationAt: URL(fileURLWithPath: "/System/Applications/TextEdit.app"),
+                [file], withApplicationAt: URL(fileURLWithPath: "/System/Applications/TextEdit.app"),
                 configuration: NSWorkspace.OpenConfiguration()
             )
         }
@@ -111,7 +117,7 @@ public final class ConfigStore {
 
     public func revealInFinder() {
         flush()
-        NSWorkspace.shared.activateFileViewerSelecting([Self.fileURL])
+        NSWorkspace.shared.activateFileViewerSelecting([file])
     }
 
     public static func revealDirectory() {
@@ -134,7 +140,7 @@ public final class ConfigStore {
     private func save(replacingFile: Bool = false) {
         saveWork?.cancel()
         saveWork = nil
-        guard replacingFile || (try? Data(contentsOf: Self.fileURL)) == knownContents else {
+        guard replacingFile || (try? Data(contentsOf: file)) == knownContents else {
             Diagnostics.log.notice("config: the file changed before Settings saved an edit, so the file wins")
             return load()
         }
@@ -147,9 +153,9 @@ public final class ConfigStore {
             return
         }
         do {
-            try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let data = Data(contents.utf8)
-            try data.write(to: Self.fileURL, options: .atomic)
+            try data.write(to: Self.writeTarget(for: file), options: .atomic)
             knownContents = data
         } catch {
             self.error = "The file could not be written: \(error.localizedDescription)"
@@ -157,17 +163,47 @@ public final class ConfigStore {
         }
     }
 
+    /// Not over a link to a file that is missing, such as a dotfiles checkout that is not there yet.
     private func createDefaultFileIfMissing() {
         let manager = FileManager.default
-        guard persists, !manager.fileExists(atPath: Self.fileURL.path) else { return }
-        try? manager.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-        try? Config.defaultFileContents.write(to: Self.fileURL, atomically: true, encoding: .utf8)
+        guard persists, !manager.fileExists(atPath: file.path), Self.writeTarget(for: file) == file else { return }
+        try? manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? Config.defaultFileContents.write(to: file, atomically: true, encoding: .utf8)
     }
 
-    /// Editors often save by replacing the file, so the directory is watched too and the file watch re-armed.
-    private func watchFile() {
+    /// A dotfiles setup often links the file, and an atomic write replaces a link with a plain file, so saves
+    /// go to the file at the end of the links, even one that does not exist yet.
+    public static func writeTarget(for url: URL) -> URL {
+        var target = url
+        // Links can form a loop.
+        for _ in 0..<32 {
+            guard let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: target.path) else { break }
+            target = destination.hasPrefix("/")
+                ? URL(fileURLWithPath: destination)
+                : target.deletingLastPathComponent().appending(path: destination)
+            target = target.standardizedFileURL
+        }
+        return target
+    }
+
+    /// Opens the watches before loading, so no change after the load goes unseen. The host's load recreates
+    /// a missing directory and file, which the watches before it could not open. Only the host creates them,
+    /// so a tool keeps trying while the directory is gone.
+    private func reload() {
+        rewatch()
+        load()
+        guard directorySource == nil || fileSource == nil else { return }
+        rewatch()
+        if directorySource == nil { scheduleReload(after: 1000) }
+    }
+
+    /// Editors often save by replacing the file, and the directory itself can be replaced, as when a dotfiles
+    /// setup links it again, so both are watched and both watches opened again after every change.
+    private func rewatch() {
+        directorySource?.cancel()
+        directorySource = watch(directory.path, events: [.write, .delete, .rename])
         fileSource?.cancel()
-        fileSource = watch(Self.fileURL.path, events: [.write, .extend, .delete, .rename, .attrib])
+        fileSource = watch(file.path, events: [.write, .extend, .delete, .rename, .attrib])
     }
 
     private func watch(_ path: String, events: DispatchSource.FileSystemEvent) -> DispatchSourceFileSystemObject? {
@@ -182,15 +218,12 @@ public final class ConfigStore {
         return source
     }
 
-    private func scheduleReload() {
+    private func scheduleReload(after milliseconds: Int = 100) {
         reloadWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            MainActor.assumeIsolated {
-                self?.watchFile()
-                self?.load()
-            }
+            MainActor.assumeIsolated { self?.reload() }
         }
         reloadWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100), execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(milliseconds), execute: work)
     }
 }

@@ -35,5 +35,9 @@ let package = Package(
             name: "LayoutSwitcherCoreTests",
             dependencies: ["LayoutSwitcherCore"]
         ),
+        .testTarget(
+            name: "AppSwitcherKitTests",
+            dependencies: ["AppSwitcherKit", "AppSwitcherCore"]
+        ),
     ]
 )
