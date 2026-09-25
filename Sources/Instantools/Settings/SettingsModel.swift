@@ -358,7 +358,7 @@ final class SettingsModel {
     }
 
     func openRepository() {
-        if let url = URL(string: "https://github.com/infeace/InstantTab") { NSWorkspace.shared.open(url) }
+        if let url = URL(string: "https://github.com/infeace/Instantools") { NSWorkspace.shared.open(url) }
     }
 }
 
