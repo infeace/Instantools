@@ -55,20 +55,20 @@ stop_running() {
     exit 1
 }
 
-# Instantools replaces InstantTab and InstantLang. They stay installed with their settings, so either can
-# be started again to go back.
+# Instantools replaces the standalone InstantTab and InstantLang apps. They stay installed with their
+# settings, so either can be started again to go back.
 retire_old_apps() {
     local name label plist pids
     for name in InstantTab InstantLang; do
         label="com.infeace.$name"
         plist="$HOME/Library/LaunchAgents/$label.plist"
         if launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1; then
-            echo "Unloading the $name login agent"
+            echo "Unloading the login agent of the standalone $name app"
             launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
         fi
         pids="$(pgrep -x "$name" || true)"
         if [[ -n "$pids" ]]; then
-            echo "Quitting $name"
+            echo "Quitting the standalone $name app"
             # shellcheck disable=SC2086
             kill -TERM $pids 2>/dev/null || true
             for _ in {1..50}; do
@@ -77,7 +77,7 @@ retire_old_apps() {
             done
         fi
         if [[ -f "$plist" ]]; then
-            echo "Removing $plist. To go back to $name, quit Instantools, open $name and turn Start at login back on."
+            echo "Removing $plist. To go back to the standalone $name app, quit Instantools, open $name and turn Start at login back on."
             rm "$plist"
             # Instantools' next launch turns on its own Start at login in place of this one.
             defaults write "$bundle_id" removedOldLoginAgents -array-add "$name"
@@ -98,11 +98,11 @@ for tool in "${tools[@]}"; do
     cp "$bin_dir/$product" "$app/Contents/Helpers/$helper"
 done
 cp Resources/Info.plist "$app/Contents/Info.plist"
-cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
+cp Resources/AppIcon.icns Resources/InstantTab.png Resources/InstantLang.png "$app/Contents/Resources/"
 build_number="$(git rev-list --count HEAD 2>/dev/null || echo 0)"
 plutil -replace CFBundleVersion -string "$build_number" "$app/Contents/Info.plist"
 
-# The second is the identity InstantTab used, so a Mac set up for it needs no new one.
+# The second is the identity the standalone InstantTab app used, so a Mac set up for it needs no new one.
 identities="$(security find-identity -v -p codesigning)"
 identity=""
 for candidate in "Instantools Local Signing" "InstantTab Local Signing"; do
