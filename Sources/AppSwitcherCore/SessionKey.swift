@@ -40,6 +40,15 @@ public enum SessionKey: Sendable, Equatable {
         self == .previous || self == .next
     }
 
+    /// A key pressed before the show delay has passed shows the panel, so nothing happens unseen. Keys that
+    /// leave the switcher at once need no panel.
+    public var showsPanel: Bool {
+        switch self {
+        case .cancel, .expose, .app: false
+        case .previous, .next, .quit, .hide: true
+        }
+    }
+
     /// Letters follow the typed character so they match the keyboard layout. When the key types anything
     /// but a single ASCII character, as on Cyrillic layouts, its US key position counts instead.
     public static func character(keycode: Int64, characters: String) -> Character? {

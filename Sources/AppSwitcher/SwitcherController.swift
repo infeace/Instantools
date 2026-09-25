@@ -32,6 +32,8 @@ final class SwitcherController {
     /// whose time on main could be later than a genuine new Cmd+Tab while main is busy.
     private var releaseNanoseconds: UInt64 = 0
     private var showWork: DispatchWorkItem?
+    /// Set once the show delay has passed, so a list that was empty until then is drawn when it fills in.
+    private var panelDue = false
     private var releasePoll: Timer?
     private var exposeWait: Timer?
     /// Set when the switcher opens App Exposé, so the next switch closes it.
@@ -96,21 +98,23 @@ final class SwitcherController {
     }
 
     func sessionKey(_ key: SessionKey) {
-        guard let selected = session?.selected else { return }
-        // A key pressed before the show delay has passed shows the panel, so nothing happens unseen. Keys
-        // that leave the switcher at once need no panel.
-        switch key {
-        case .cancel, .expose, .app: break
-        default: showNow()
-        }
-        switch key {
+        guard var active = session else { return }
+        if key.showsPanel { showNow() }
+        let action = active.handle(key, appKeys: appKeys, snapshot: tracker.snapshot)
+        session = active
+        switch action {
+        case .none: break
+        case .moved: panel.select(active.selectedIndex)
         case .cancel: end()
-        case .previous: changeSelection { $0.move(by: -1) }
-        case .next: changeSelection { $0.move(by: 1) }
-        case .quit: quit(selected.pid)
-        case .hide: hide(selected.pid)
-        case .expose: expose(selected)
-        case .app(let character): switchToApp(boundTo: character)
+        case .quit(let pid): quit(pid)
+        case .hide(let pid): hide(pid)
+        case .expose(let entry): expose(entry)
+        // Switches on the key press, without waiting for Cmd to be released. Within the show delay nothing
+        // is drawn, like a quick Cmd+Tab.
+        case .switchTo(let entry): commit(entry)
+        case .launch(let bundleId):
+            end()
+            focuser.launch(bundleId: bundleId, closingExpose: takeExposeToClose())
         }
     }
 
@@ -133,30 +137,19 @@ final class SwitcherController {
         exposeWait = timer
     }
 
-    /// Switches on the key press, without waiting for Cmd to be released. Within the show delay nothing
-    /// is drawn, like a quick Cmd+Tab. An unbound key does nothing.
-    private func switchToApp(boundTo key: Character) {
-        guard let active = session,
-              let target = SwitcherFilter.target(forAppKey: key, appKeys: appKeys, in: tracker.snapshot, listed: active.entries)
-        else { return }
-        switch target {
-        case .running(let entry):
-            commit(entry)
-        case .launch(let bundleId):
-            end()
-            focuser.launch(bundleId: bundleId, closingExpose: takeExposeToClose())
-        }
-    }
-
     func modelChanged() {
         guard var active = session else { return }
         let entries = currentEntries(targets: sessionTargets)
         guard entries != active.entries else { return }
-        guard !entries.isEmpty else { return end() }
         active.reconcile(with: entries)
         session = active
-        if let screen = displays.screen(for: sessionDisplay) {
+        guard panelDue, let screen = displays.screen(for: sessionDisplay) else { return }
+        if active.entries.isEmpty {
+            panel.hide()
+        } else if panel.isVisible {
             panel.update(entries: active.entries, selected: active.selectedIndex, on: screen, iconSize: config.iconSize)
+        } else {
+            panel.show(entries: active.entries, selected: active.selectedIndex, on: screen, iconSize: config.iconSize)
         }
     }
 
@@ -194,16 +187,17 @@ final class SwitcherController {
             ? DisplayScope.focusedDisplay(in: tracker.snapshot, frontmostPid: frontmost, displays: displays.displays) : nil
         let targets = DisplayScope.targets(for: config.scope, groups: groups, mouseDisplay: mouseDisplay, focusedDisplay: focusedDisplay)
         let entries = currentEntries(targets: targets)
-        // No notification reports a window opened in the app already in front, so a stale snapshot can list
-        // nothing, and without a refresh every press would stop here.
-        guard !entries.isEmpty else { return tracker.refreshWindows() }
-        let index = SwitcherFilter.initialIndex(count: entries.count, firstIsFrontmost: entries[0].pid == frontmost, reverse: reverse)
-        session = SwitcherSession(entries: entries, selectedIndex: index)
+        session = SwitcherSession(entries: entries, frontmostPid: frontmost, reverse: reverse)
         sessionDisplay = focusedDisplay ?? mouseDisplay
         sessionTargets = targets
 
         // A very quick tap can release Cmd before this runs: switch without drawing.
-        guard CGEventSource.flagsState(.combinedSessionState).contains(.maskCommand) else { return commit() }
+        guard CGEventSource.flagsState(.combinedSessionState).contains(.maskCommand) else {
+            // No notification reports a window opened in the app already in front, so a stale snapshot can
+            // list nothing, and without a refresh every quick tap would find nothing.
+            if entries.isEmpty { tracker.refreshWindows() }
+            return commit()
+        }
 
         if config.showDelayMs == 0 {
             showPanel(measured: true)
@@ -235,7 +229,8 @@ final class SwitcherController {
 
     /// Only a show at the configured delay is measured, since an early one would read as impossibly fast.
     private func showPanel(measured: Bool) {
-        guard let active = session, let screen = displays.screen(for: sessionDisplay) else { return }
+        panelDue = true
+        guard let active = session, !active.entries.isEmpty, let screen = displays.screen(for: sessionDisplay) else { return }
         panel.show(entries: active.entries, selected: active.selectedIndex, on: screen, iconSize: config.iconSize)
         if measured { probe.arm(startNanoseconds: pressNanoseconds + UInt64(config.showDelayMs) * 1_000_000) }
     }
@@ -273,6 +268,7 @@ final class SwitcherController {
         sessionTargets = nil
         showWork?.cancel()
         showWork = nil
+        panelDue = false
         releasePoll?.invalidate()
         releasePoll = nil
         panel.hide()

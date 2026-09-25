@@ -19,7 +19,7 @@ final class SwitcherPanel {
     private var tileSize: CGFloat = 0
     private var panelWidth: CGFloat = 0
     private var entries: [SwitcherEntry] = []
-    private var isVisible = false
+    private(set) var isVisible = false
     private var selectedIndex = 0
     /// A pid, since the list can change between mouse-down and mouse-up.
     private var pressedPid: Int32?

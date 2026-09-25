@@ -44,6 +44,65 @@ struct SwitcherSessionTests {
         #expect(SwitcherSession(entries: entries([1, 2]), selectedIndex: 5).selectedIndex == 1)
         #expect(SwitcherSession(entries: [], selectedIndex: 3).selected == nil)
     }
+
+    @Test func startsWhereNativeCmdTabDoes() {
+        #expect(SwitcherSession(entries: entries([1, 2, 3]), frontmostPid: 1, reverse: false).selected?.pid == 2)
+        #expect(SwitcherSession(entries: entries([1, 2, 3]), frontmostPid: 9, reverse: false).selected?.pid == 1)
+        #expect(SwitcherSession(entries: entries([1, 2, 3]), frontmostPid: 1, reverse: true).selected?.pid == 3)
+        #expect(SwitcherSession(entries: [], frontmostPid: 1, reverse: false).selected == nil)
+    }
+
+    private let appKeys = AppKeyMap([
+        .init(key: "f", bundleId: "com.apple.finder"), .init(key: "s", bundleId: "com.apple.Safari"),
+    ])
+    private let finderOnly = Snapshot(
+        apps: [RunningApp(pid: 1, bundleId: "com.apple.finder", name: "Finder")],
+        windows: [WindowRecord(id: 11, pid: 1, frame: CGRect(x: 0, y: 0, width: 100, height: 100))]
+    )
+
+    /// Cmd+Tab on a display with no windows lists nothing, and its app keys still switch and launch.
+    @Test func appKeysWorkWithNothingListed() {
+        var session = SwitcherSession(entries: [], frontmostPid: 1, reverse: false)
+        #expect(session.handle(.app("s"), appKeys: appKeys, snapshot: finderOnly) == .launch(bundleId: "com.apple.Safari"))
+        #expect(session.handle(.app("f"), appKeys: appKeys, snapshot: finderOnly)
+            == .switchTo(SwitcherEntry(pid: 1, name: "Finder", windowId: 11, key: "f")))
+        #expect(session.handle(.app("x"), appKeys: appKeys, snapshot: finderOnly) == .none)
+    }
+
+    @Test func keysForTheSelectedAppDoNothingWithNothingListed() {
+        var session = SwitcherSession(entries: [], frontmostPid: 1, reverse: false)
+        for key in [SessionKey.previous, .next, .quit, .hide, .expose] {
+            #expect(session.handle(key, appKeys: appKeys, snapshot: finderOnly) == .none)
+        }
+        #expect(session.handle(.cancel, appKeys: appKeys, snapshot: finderOnly) == .cancel)
+    }
+
+    @Test func keysActOnTheSelectedApp() {
+        var session = SwitcherSession(entries: entries([1, 2, 3]), frontmostPid: 1, reverse: false)
+        #expect(session.handle(.next, appKeys: appKeys, snapshot: finderOnly) == .moved)
+        #expect(session.selected?.pid == 3)
+        #expect(session.handle(.quit, appKeys: appKeys, snapshot: finderOnly) == .quit(pid: 3))
+        #expect(session.handle(.previous, appKeys: appKeys, snapshot: finderOnly) == .moved)
+        #expect(session.handle(.hide, appKeys: appKeys, snapshot: finderOnly) == .hide(pid: 2))
+        #expect(session.handle(.expose, appKeys: appKeys, snapshot: finderOnly) == .expose(entries([2])[0]))
+        // The listed tile, not the app's first window.
+        #expect(session.handle(.app("f"), appKeys: appKeys, snapshot: finderOnly) == .switchTo(entries([1])[0]))
+    }
+
+    /// As when the refresh after a press with a stale snapshot finds windows.
+    @Test func aListThatFillsInStartsWhereCmdTabWould() {
+        var session = SwitcherSession(entries: [], frontmostPid: 1, reverse: false)
+        session.reconcile(with: entries([1, 2, 3]))
+        #expect(session.selected?.pid == 2)
+        var reversed = SwitcherSession(entries: [], frontmostPid: 1, reverse: true)
+        reversed.reconcile(with: entries([1, 2, 3]))
+        #expect(reversed.selected?.pid == 3)
+    }
+
+    @Test func onlyKeysThatStayInTheSwitcherShowThePanel() {
+        let keys: [SessionKey] = [.previous, .next, .quit, .hide, .cancel, .expose, .app("f")]
+        #expect(keys.map(\.showsPanel) == [true, true, true, true, false, false, false])
+    }
 }
 
 struct MRUListTests {
