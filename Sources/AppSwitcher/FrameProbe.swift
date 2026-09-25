@@ -1,8 +1,9 @@
 import AppKit
 import QuartzCore
 
-/// Measures key press to first displayed frame: after the panel is ordered in, the next display link
-/// tick's target timestamp is when the panel reaches the screen.
+/// Measures key press to the display frame the panel is drawn for: after the panel is ordered in, the next
+/// display link tick's target timestamp, which is when that frame is predicted to be shown, not an observed
+/// appearance.
 @MainActor
 final class FrameProbe: NSObject {
     private let view: NSView

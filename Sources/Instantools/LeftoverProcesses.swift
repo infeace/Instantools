@@ -6,34 +6,37 @@ import InstantoolsKit
 /// Runs at launch, before any tool starts, and waits for everything it stops.
 @MainActor
 enum LeftoverProcesses {
-    /// The old apps go too, and must be gone first: InstantTab turns native Cmd+Tab back on as it quits, and
-    /// quitting after the new switcher turned it off would leave two switchers on one key.
-    static func stop() {
-        var pids = Migration.OldApp.allCases.flatMap { app in
-            NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleId).map(\.processIdentifier)
+    /// The standalone InstantTab and InstantLang apps go too, and must be gone first: the InstantTab app turns
+    /// native Cmd+Tab back on as it quits, and quitting after the new switcher turned it off would leave two
+    /// switchers on one key. True when one was InstantTab, the tool or the app, which a kill leaves with native
+    /// Cmd+Tab off.
+    static func stop() -> Bool {
+        let apps = Migration.OldApp.allCases.flatMap { app in
+            NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleId).map { (pid: $0.processIdentifier, tool: app.tool) }
         }
-        pids += toolPids()
-        pids = pids.filter { $0 > 0 && $0 != getpid() }
-        guard !pids.isEmpty else { return }
+        let leftovers = (apps + toolProcesses()).filter { $0.pid > 0 && $0.pid != getpid() }
+        guard !leftovers.isEmpty else { return false }
+        let pids = leftovers.map(\.pid)
         Diagnostics.log.notice("stopping leftover processes \(pids.map(String.init).joined(separator: ", "), privacy: .public)")
         terminate(pids)
+        return leftovers.contains { $0.tool == .appSwitcher }
     }
 
     /// Tools left running by a host that crashed or was killed, or by another install, found by file name.
-    static func toolPids() -> [pid_t] {
-        let names = Set(ToolId.allCases.map(\.executableName))
+    static func toolProcesses() -> [(pid: pid_t, tool: ToolId)] {
+        let tools = Dictionary(uniqueKeysWithValues: ToolId.allCases.map { ($0.executableName, $0) })
         let capacity = Int(proc_listallpids(nil, 0)) + 64
         guard capacity > 64 else { return [] }
         var pids = [pid_t](repeating: 0, count: capacity)
         let count = pids.withUnsafeMutableBytes { proc_listallpids($0.baseAddress, Int32($0.count)) }
         guard count > 0 else { return [] }
         var path = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
-        return pids.prefix(Int(count)).filter { pid in
-            guard pid > 0 else { return false }
+        return pids.prefix(Int(count)).compactMap { pid in
+            guard pid > 0 else { return nil }
             let length = proc_pidpath(pid, &path, UInt32(path.count))
-            guard length > 0 else { return false }
+            guard length > 0 else { return nil }
             let executable = String(decoding: path.prefix(Int(length)).map { UInt8(bitPattern: $0) }, as: UTF8.self)
-            return names.contains(URL(fileURLWithPath: executable).lastPathComponent)
+            return tools[URL(fileURLWithPath: executable).lastPathComponent].map { (pid: pid, tool: $0) }
         }
     }
 

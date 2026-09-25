@@ -32,16 +32,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             model.start()
             self.window = window
             self.model = model
-            NSApp.setActivationPolicy(.regular)
+            OwnWindow.opened(window)
         }
-        guard let window else { return }
-        OwnWindow.bringForward(window)
-        // Right after becoming a regular app the first request can be dropped.
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated {
-                if !NSApp.isActive || !window.isKeyWindow { OwnWindow.bringForward(window) }
-            }
-        }
+        if let window { OwnWindow.present(window) }
     }
 
     /// For tool state changes and status replies, which arrive between the model's own refreshes.
@@ -65,8 +58,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         model = nil
         DispatchQueue.main.async { [weak self] in
             MainActor.assumeIsolated {
+                guard let window = self?.window else { return }
                 self?.window = nil
-                NSApp.setActivationPolicy(.accessory)
+                OwnWindow.closed(window)
             }
         }
     }

@@ -38,7 +38,7 @@ final class SwitcherController {
     private var exposeOpened = false
     private var lastChoice: (pid: Int32, previousFrontmost: Int32?, nanoseconds: UInt64)?
 
-    /// Key press to first frame of the panel, minus the show delay.
+    /// Key press to the display frame the panel is drawn for, minus the show delay.
     private(set) var latency = LatencyStats()
 
     init(tracker: WindowTracker, displays: Displays, icons: IconCache, taps: InputTaps) {
@@ -194,7 +194,9 @@ final class SwitcherController {
             ? DisplayScope.focusedDisplay(in: tracker.snapshot, frontmostPid: frontmost, displays: displays.displays) : nil
         let targets = DisplayScope.targets(for: config.scope, groups: groups, mouseDisplay: mouseDisplay, focusedDisplay: focusedDisplay)
         let entries = currentEntries(targets: targets)
-        guard !entries.isEmpty else { return }
+        // No notification reports a window opened in the app already in front, so a stale snapshot can list
+        // nothing, and without a refresh every press would stop here.
+        guard !entries.isEmpty else { return tracker.refreshWindows() }
         let index = SwitcherFilter.initialIndex(count: entries.count, firstIsFrontmost: entries[0].pid == frontmost, reverse: reverse)
         session = SwitcherSession(entries: entries, selectedIndex: index)
         sessionDisplay = focusedDisplay ?? mouseDisplay

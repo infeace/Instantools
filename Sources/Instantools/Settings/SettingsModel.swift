@@ -19,6 +19,9 @@ final class SettingsModel {
         var requestStatus: () -> Void
         var appSwitcher: () -> AppSwitcherStatus?
         var layoutSwitcher: () -> LayoutSwitcherStatus?
+        var layouts: () -> [KeyboardLayout]
+        var currentLayout: () -> String?
+        var selectLayout: (String) -> Void
         var displays: () -> [Display]
         var mouseDisplay: () -> UInt32?
         var accessibilityGranted: () -> Bool
@@ -54,7 +57,9 @@ final class SettingsModel {
     private(set) var runningApps: [AppChoice] = []
     /// Nil until the Cmd+Tab tool has replied, false while macOS kept its own Cmd+Tab.
     private(set) var handlesCmdTab: Bool?
-    private(set) var layouts: [String] = []
+    /// Read by the host itself, so they show while Language is off too.
+    private(set) var layouts: [KeyboardLayout] = []
+    private(set) var currentLayout: String?
     /// Nil until the Language tool has replied.
     private(set) var layoutTapRunning: Bool?
 
@@ -108,9 +113,9 @@ final class SettingsModel {
         set(\.latency, LatencyStats(chronological: switcher?.latencySamples ?? []))
         set(\.focusedDisplay, switcher?.focusedDisplay)
         set(\.handlesCmdTab, switcher?.handlesCmdTab)
-        let layout = actions.layoutSwitcher()
-        set(\.layouts, layout?.layouts ?? [])
-        set(\.layoutTapRunning, layout?.tapRunning)
+        set(\.layoutTapRunning, actions.layoutSwitcher()?.tapRunning)
+        set(\.layouts, actions.layouts())
+        set(\.currentLayout, actions.currentLayout())
         set(\.displays, actions.displays())
         set(\.mouseDisplay, actions.mouseDisplay())
         set(\.runningApps, Self.runningApps())
@@ -169,26 +174,34 @@ final class SettingsModel {
         actions.retry(tool)
     }
 
-    /// Doing its job right now. The Language tool leaves the Input Monitoring check out of its status,
-    /// since the check takes about 10 ms on its run loop, so it is added here.
+    /// Doing its job right now.
     func isActive(_ tool: ToolId) -> Bool {
-        guard state(of: tool) == .running else { return false }
-        return switch tool {
-        case .appSwitcher: handlesCmdTab != false
-        case .layoutSwitcher: layoutTapRunning != false && inputMonitoringGranted
-        }
+        ToolCondition.isActive(
+            tool, state: state(of: tool), handlesCmdTab: handlesCmdTab, tapRunning: layoutTapRunning,
+            inputMonitoring: { inputMonitoringGranted }
+        )
     }
 
-    /// Only then does the check fail with Accessibility on. Without Accessibility it cannot be told from
-    /// never asked.
+    func condition(of tool: ToolId) -> ToolCondition {
+        ToolCondition(enabled: isEnabled(tool), state: state(of: tool), isActive: isActive(tool))
+    }
+
+    var permissions: PermissionState {
+        PermissionState(accessibility: accessibilityGranted, inputMonitoring: inputMonitoringGranted)
+    }
+
     var inputMonitoringSwitchedOff: Bool {
-        accessibilityGranted && !inputMonitoringGranted
+        permissions.inputMonitoringSwitchedOff
     }
 
-    /// The check passes with Accessibility alone, unless Input Monitoring is switched off. Cmd+Tab needs it
-    /// only for its taps, which also need Accessibility.
-    var needsInputMonitoring: Bool {
-        !inputMonitoringGranted && (isEnabled(.layoutSwitcher) || (isEnabled(.appSwitcher) && accessibilityGranted))
+    /// What a tool that is on lacks right now, for its card on General.
+    func missingPermissions(of tool: ToolId) -> [Permission] {
+        isEnabled(tool) ? permissions.missing(for: tool) : []
+    }
+
+    func selectLayout(_ id: String) {
+        actions.selectLayout(id)
+        refresh()
     }
 
     var startAtLogin: Binding<Bool> {

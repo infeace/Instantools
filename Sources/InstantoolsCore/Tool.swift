@@ -5,10 +5,11 @@ public enum ToolId: String, CaseIterable, Codable, Sendable, Identifiable {
 
     public var id: Self { self }
 
+    /// Also the file name of its icon in Resources.
     public var name: String {
         switch self {
-        case .appSwitcher: "Cmd+Tab"
-        case .layoutSwitcher: "Language"
+        case .appSwitcher: "InstantTab"
+        case .layoutSwitcher: "InstantLang"
         }
     }
 
@@ -16,6 +17,14 @@ public enum ToolId: String, CaseIterable, Codable, Sendable, Identifiable {
         switch self {
         case .appSwitcher: "An app switcher that appears the moment you press Cmd+Tab."
         case .layoutSwitcher: "Control+Command switches the keyboard layout, pressed in either order."
+        }
+    }
+
+    /// Short enough for one line on a card.
+    public var tagline: String {
+        switch self {
+        case .appSwitcher: "Switches apps with Cmd+Tab"
+        case .layoutSwitcher: "Switches layouts with Control+Command"
         }
     }
 

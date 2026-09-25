@@ -45,9 +45,20 @@ struct PaneIcon: View {
 
 struct ToolIcon: View {
     let tool: ToolId
+    var size: CGFloat = 30
 
     var body: some View {
-        IconTile(tool.tile, size: 30)
+        if let icon = ToolIcons.image(for: tool) {
+            // Its square is 824 of its 1024 points, so it is drawn larger to line up with tiles of the same size.
+            let drawn = (size * 1024 / 824).rounded()
+            Image(nsImage: icon)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: drawn, height: drawn)
+                .frame(width: size, height: size)
+        } else {
+            IconTile(tool.tile, size: size)
+        }
     }
 }
 
@@ -123,17 +134,29 @@ struct SettingsCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
+        CardSection(title: title, footer: footer) {
+            VStack(spacing: 0) {
+                content
+            }
+            .cardBackground()
+        }
+    }
+}
+
+/// A title and a footer around cards of its own, as SettingsCard has around its rows.
+struct CardSection<Content: View>: View {
+    let title: String
+    var footer: String?
+    @ViewBuilder let content: Content
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .padding(.leading, 4)
                 .accessibilityAddTraits(.isHeader)
-            VStack(spacing: 0) {
-                content
-            }
-            .background(Card.fill, in: Card.shape)
-            .overlay(Card.shape.strokeBorder(Card.stroke))
+            content
             if let footer {
                 Text(footer)
                     .font(.caption)
@@ -396,17 +419,7 @@ extension Callout {
     }
 }
 
-enum Permission {
-    case accessibility
-    case inputMonitoring
-
-    var title: String {
-        switch self {
-        case .accessibility: "Accessibility"
-        case .inputMonitoring: "Input Monitoring"
-        }
-    }
-
+extension Permission {
     /// Input Monitoring wears Language's colors, since Language is what needs it most.
     var tile: Tile {
         switch self {
@@ -419,6 +432,21 @@ enum Permission {
         switch self {
         case .accessibility: Permissions.requestAccessibilityInSettings()
         case .inputMonitoring: Permissions.requestInputMonitoringInSettings()
+        }
+    }
+
+    /// Why a tool needs it, on the tool's card on General and in the welcome.
+    func reason(for tool: ToolId, _ state: PermissionState) -> String {
+        switch (tool, self) {
+        case (.appSwitcher, .accessibility):
+            let covers = state.inputMonitoringSwitchedOff ? "" : " It covers InstantLang too."
+            return "Needed for the keys inside the switcher and to bring the right window forward.\(covers)"
+        case (.appSwitcher, .inputMonitoring):
+            return "Switched off for Instantools, so the keys inside the switcher do nothing until it is back on."
+        case (.layoutSwitcher, _):
+            return state.inputMonitoringSwitchedOff
+                ? "Switched off for Instantools, so InstantLang cannot see Control and Command until it is back on."
+                : "Lets InstantLang see Control and Command. Allowing Accessibility covers it too."
         }
     }
 }
@@ -539,12 +567,76 @@ struct ToolStatusBar: View {
 
 struct StatusDot: View {
     let color: Color
+    var size: CGFloat = 8
 
     var body: some View {
         Circle()
             .fill(color)
-            .frame(width: 8, height: 8)
-            .shadow(color: color.opacity(0.6), radius: 3)
+            .frame(width: size, height: size)
+            .shadow(color: color.opacity(0.6), radius: size * 0.375)
+    }
+}
+
+extension ToolCondition {
+    var color: Color {
+        switch self {
+        case .active: .green
+        case .inactive, .starting: .orange
+        case .off: Color(white: 0.6)
+        case .failed: .red
+        }
+    }
+
+    func text(for tool: ToolId) -> String {
+        switch self {
+        case .active: "Running"
+        case .inactive: tool.inactiveStatus
+        case .starting: "Starting…"
+        case .off: "Off"
+        case .failed: "Failed"
+        }
+    }
+}
+
+/// Rows that wrap like lines of text, each centered.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+    var lineSpacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let sizes = sizes(of: subviews, within: proposal.width ?? .infinity)
+        let rows = rows(of: sizes, within: proposal.width ?? .infinity)
+        let widths = rows.map { row in row.reduce(0) { $0 + sizes[$1].width } + spacing * CGFloat(row.count - 1) }
+        let height = rows.reduce(0) { total, row in total + (row.map { sizes[$0].height }.max() ?? 0) }
+        return CGSize(width: widths.max() ?? 0, height: height + lineSpacing * CGFloat(max(rows.count - 1, 0)))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let sizes = sizes(of: subviews, within: bounds.width)
+        var y = bounds.minY
+        for row in rows(of: sizes, within: bounds.width) {
+            let width = row.reduce(0) { $0 + sizes[$1].width } + spacing * CGFloat(row.count - 1)
+            let height = row.map { sizes[$0].height }.max() ?? 0
+            var x = bounds.midX - width / 2
+            for index in row {
+                let size = sizes[index]
+                subviews[index].place(at: CGPoint(x: x, y: y + (height - size.height) / 2), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += height + lineSpacing
+        }
+    }
+
+    /// Never wider than a row, so a long name truncates rather than overflows.
+    private func sizes(of subviews: Subviews, within width: CGFloat) -> [CGSize] {
+        subviews.map { subview in
+            let size = subview.sizeThatFits(.unspecified)
+            return size.width <= width ? size : subview.sizeThatFits(ProposedViewSize(width: width, height: nil))
+        }
+    }
+
+    private func rows(of sizes: [CGSize], within width: CGFloat) -> [Range<Int>] {
+        FlowRows.rows(widths: sizes.map { Double($0.width) }, maxWidth: Double(width), spacing: Double(spacing))
     }
 }
 
@@ -564,6 +656,11 @@ extension URL {
 }
 
 extension View {
+    func cardBackground() -> some View {
+        background(Card.fill, in: Card.shape)
+            .overlay(Card.shape.strokeBorder(Card.stroke))
+    }
+
     @ViewBuilder func glassPanel(in shape: some Shape) -> some View {
         if #available(macOS 26, *) {
             glassEffect(.regular, in: shape)

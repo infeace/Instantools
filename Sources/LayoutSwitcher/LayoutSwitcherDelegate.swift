@@ -11,7 +11,7 @@ final class LayoutSwitcherDelegate: NSObject, NSApplicationDelegate {
     )
     private lazy var channel = ToolChannel { [unowned self] request in
         switch request.request {
-        case .status: ToolMessage(layoutSwitcher: LayoutSwitcherStatus(tapRunning: tap.isRunning, layouts: sources.names))
+        case .status: ToolMessage(layoutSwitcher: LayoutSwitcherStatus(tapRunning: tap.isRunning))
         }
     }
 

@@ -1,5 +1,5 @@
-/// What the first launch takes over from InstantTab and InstantLang, the apps Instantools replaces. The old
-/// apps and their config stay where they are, so going back is always possible.
+/// What the first launch takes over from the standalone InstantTab and InstantLang apps, which Instantools
+/// replaces. The old apps and their config stay where they are, so going back is always possible.
 public enum Migration {
     public enum OldApp: String, CaseIterable, Sendable {
         case instantTab = "InstantTab"
@@ -44,8 +44,8 @@ public enum Migration {
         public var agentsToRemove: [OldApp]
         public var enableStartAtLogin: Bool
         public var enabledTools: Set<ToolId>
-        /// On a fresh install nothing is enabled, so Settings opens to let the user choose.
-        public var showSettings: Bool
+        /// On a fresh install nothing is enabled, so the welcome opens to let the user choose.
+        public var showWelcome: Bool
     }
 
     public static func plan(for facts: Facts) -> Plan {
@@ -57,7 +57,7 @@ public enum Migration {
             agentsToRemove: OldApp.allCases.filter(facts.loginAgents.contains),
             enableStartAtLogin: !facts.loginAgents.isEmpty,
             enabledTools: enabled,
-            showSettings: enabled.isEmpty
+            showWelcome: enabled.isEmpty
         )
     }
 }

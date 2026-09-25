@@ -46,7 +46,7 @@ struct ExclusionsPane: View {
     private var passThroughCard: some View {
         SettingsCard(
             title: "Apps that keep Cmd+Tab",
-            footer: "While one of these apps is in front, Cmd+Tab goes to it instead of Instantools. For virtual machines, remote desktops and games. Click another app to leave it."
+            footer: "While one of these apps is in front, Cmd+Tab goes to it instead of InstantTab. For virtual machines, remote desktops and games. Click another app to leave it."
         ) {
             if passThrough.isEmpty { EmptyRow(text: "None yet.") }
             DividedRows(passThrough, id: \.self) { bundleId in

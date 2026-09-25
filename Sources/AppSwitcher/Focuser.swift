@@ -18,15 +18,23 @@ final class Focuser: Sendable {
         if closingExpose { queue.async { Self.closeExpose() } }
     }
 
-    /// For an app key whose app is not running. Opening it cancels any focus still in flight.
+    /// For an app key whose app is not running. Opening it cancels any focus still in flight. A slow app can
+    /// finish launching after the user has switched elsewhere, so it comes forward only if nothing newer has.
     func launch(bundleId: String, closingExpose: Bool) {
-        _ = nextToken()
-        queue.async {
+        let token = nextToken()
+        queue.async { [self] in
             defer { if closingExpose { Self.closeExpose() } }
             guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) else {
                 return DispatchQueue.main.async { NSSound.beep() }
             }
-            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = false
+            NSWorkspace.shared.openApplication(at: url, configuration: configuration) { [self] app, _ in
+                guard let app else { return }
+                DispatchQueue.main.async { [self] in
+                    if isCurrent(token) { activate(app, token: token) }
+                }
+            }
         }
     }
 
@@ -55,12 +63,15 @@ final class Focuser: Sendable {
         // window, like Finder, open one, as AltTab does.
         guard let windowId = entry.windowId else {
             guard let url = app.bundleURL else { return activate(app, token: token) }
+            guard isCurrent(token) else { return }
             NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { [self] _, error in
                 if error != nil, isCurrent(token) { activate(app, token: token) }
             }
             return
         }
-        guard SkyLight.focus(pid: entry.pid, windowId: windowId) else { return activate(app, token: token) }
+        // The raise runs after a failure too. SkyLight may have brought the app forward without making the
+        // window key, and activating only brings back whichever window the app last had in front.
+        if !SkyLight.focus(pid: entry.pid, windowId: windowId) { activate(app, token: token) }
         guard AXIsProcessTrusted() else { return }
         raiseQueue.async { [self] in raise(windowId, frame: frame, of: entry.pid, token: token) }
     }

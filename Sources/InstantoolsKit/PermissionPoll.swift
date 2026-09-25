@@ -26,11 +26,13 @@ public final class PermissionPoll {
         }
     }
 
-    /// Runs `allowed` off the main thread and hands its answer to `then` on main.
-    public static func check(_ allowed: @escaping @Sendable () -> Bool, then: @escaping @MainActor @Sendable (Bool) -> Void) {
+    /// Runs `check` off the main thread and hands its answer to `then` on main.
+    public static func check<Answer: Sendable>(
+        _ check: @escaping @Sendable () -> Answer, then: @escaping @MainActor @Sendable (Answer) -> Void
+    ) {
         DispatchQueue.global(qos: .utility).async {
-            let granted = allowed()
-            DispatchQueue.main.async { MainActor.assumeIsolated { then(granted) } }
+            let answer = check()
+            DispatchQueue.main.async { MainActor.assumeIsolated { then(answer) } }
         }
     }
 

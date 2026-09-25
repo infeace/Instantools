@@ -23,6 +23,8 @@ public final class ConfigStore {
     @ObservationIgnored private var fileSource: DispatchSourceFileSystemObject?
     @ObservationIgnored private var reloadWork: DispatchWorkItem?
     @ObservationIgnored private var saveWork: DispatchWorkItem?
+    /// The file as last read or written, so a save can tell that someone else has changed it since.
+    @ObservationIgnored private var knownContents: Data?
     @ObservationIgnored private let persists: Bool
 
     public init(persists: Bool = true) {
@@ -54,8 +56,8 @@ public final class ConfigStore {
             config = Config()
             onChange?(config)
         }
-        scheduleSave()
-        flush()
+        guard persists else { return }
+        save(replacingFile: true)
     }
 
     public func flush() {
@@ -64,7 +66,8 @@ public final class ConfigStore {
     }
 
     public func load() {
-        // Edits still waiting to be saved are newer than the file.
+        // Edits still waiting to be saved are newer than the file as last read. If it has changed since, the
+        // save loads it instead.
         guard saveWork == nil else { return }
         // A deleted file comes back with the defaults, as on first launch.
         createDefaultFileIfMissing()
@@ -75,6 +78,7 @@ public final class ConfigStore {
             fileIsBroken = true
             return
         }
+        if !missing { knownContents = data }
         do {
             let parsed = try Config.parse(data)
             error = nil
@@ -124,10 +128,16 @@ public final class ConfigStore {
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(300), execute: work)
     }
 
-    /// A refused save leaves the file as it was, which still parses, so the file is not marked broken.
-    private func save() {
+    /// A refused save leaves the file as it was, which still parses, so the file is not marked broken. A file
+    /// changed since it was last read or written holds an edit newer than the one waiting here, so it is loaded
+    /// instead, unless the user asked to replace it.
+    private func save(replacingFile: Bool = false) {
         saveWork?.cancel()
         saveWork = nil
+        guard replacingFile || (try? Data(contentsOf: Self.fileURL)) == knownContents else {
+            Diagnostics.log.notice("config: the file changed before Settings saved an edit, so the file wins")
+            return load()
+        }
         let contents: String
         do {
             contents = try config.checkedFileContents()
@@ -138,7 +148,9 @@ public final class ConfigStore {
         }
         do {
             try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-            try Data(contents.utf8).write(to: Self.fileURL, options: .atomic)
+            let data = Data(contents.utf8)
+            try data.write(to: Self.fileURL, options: .atomic)
+            knownContents = data
         } catch {
             self.error = "The file could not be written: \(error.localizedDescription)"
             Diagnostics.log.error("config save: \(error.localizedDescription, privacy: .public)")

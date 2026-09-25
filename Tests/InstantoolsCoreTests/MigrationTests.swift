@@ -2,10 +2,10 @@ import Testing
 @testable import InstantoolsCore
 
 struct MigrationTests {
-    @Test func freshInstallEnablesNothingAndOpensSettings() {
+    @Test func freshInstallEnablesNothingAndOpensTheWelcome() {
         let plan = Migration.plan(for: .init())
         #expect(plan.enabledTools.isEmpty)
-        #expect(plan.showSettings)
+        #expect(plan.showWelcome)
         #expect(!plan.copyOldConfig)
         #expect(plan.agentsToRemove.isEmpty)
         #expect(!plan.enableStartAtLogin)
@@ -17,7 +17,7 @@ struct MigrationTests {
         #expect(plan.agentsToRemove == [.instantTab])
         #expect(plan.enableStartAtLogin)
         #expect(plan.enabledTools == [.appSwitcher])
-        #expect(!plan.showSettings)
+        #expect(!plan.showWelcome)
     }
 
     @Test func anExistingNewConfigIsNeverReplaced() {

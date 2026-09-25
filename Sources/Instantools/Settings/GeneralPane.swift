@@ -4,55 +4,34 @@ import SwiftUI
 
 struct GeneralPane: View {
     let model: SettingsModel
+    let open: (SettingsPane) -> Void
 
     var body: some View {
-        PaneScroll { _ in
+        PaneScroll { compact in
             PaneHeader(pane: .general, subtitle: "Choose the tools you want. Each runs in its own process, so one never slows or stops another.")
-            tools
-            if !model.enabledTools.isEmpty { permissions }
+            tools(stacked: compact)
             startup
             configuration
         }
     }
 
-    private var tools: some View {
-        SettingsCard(title: "Tools") {
-            DividedRows(ToolId.allCases, id: \.self) { tool in
-                ToolRow(tool: tool, model: model)
-            }
-        }
-    }
-
-    private var permissions: some View {
-        SettingsCard(
-            title: "Permissions",
-            footer: "Every tool runs as part of Instantools, so macOS asks once and lists only Instantools in Privacy & Security."
+    private func tools(stacked: Bool) -> some View {
+        let layout = stacked
+            ? AnyLayout(VStackLayout(spacing: 12))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 14))
+        return CardSection(
+            title: "Tools",
+            footer: model.enabledTools.isEmpty
+                ? nil : "Every tool runs as part of Instantools, so macOS asks once and lists only Instantools in Privacy & Security."
         ) {
-            PermissionRow(permission: .accessibility, subtitle: accessibilitySubtitle, granted: model.accessibilityGranted)
-            if model.needsInputMonitoring {
-                RowDivider(indented: true)
-                PermissionRow(permission: .inputMonitoring, subtitle: inputMonitoringSubtitle, granted: model.inputMonitoringGranted)
+            layout {
+                ForEach(ToolId.allCases) { tool in
+                    ToolCard(tool: tool, model: model, stacked: stacked) { open(tool.panes[0]) }
+                }
             }
+            // Side by side, both cards take the height of the taller one.
+            .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private var accessibilitySubtitle: String {
-        let switchedOff = model.inputMonitoringSwitchedOff
-        if model.isEnabled(.appSwitcher) {
-            let covers = switchedOff ? "" : " It covers Language too."
-            return "Cmd+Tab needs it for the keys inside the switcher and to bring the right window forward.\(covers)"
-        }
-        return switchedOff
-            ? "Not enough for Language while Input Monitoring is switched off."
-            : "Lets Language see Control and Command, in place of Input Monitoring."
-    }
-
-    private var inputMonitoringSubtitle: String {
-        guard model.inputMonitoringSwitchedOff else {
-            return "Lets Language see Control and Command. Allowing Accessibility covers it too."
-        }
-        let tools = ToolId.allCases.filter(model.isEnabled).map(\.name).formatted(.list(type: .and))
-        return "Switched off for Instantools, so \(tools) cannot see keys until it is back on."
     }
 
     private var startup: some View {
@@ -86,81 +65,131 @@ struct GeneralPane: View {
     }
 }
 
-private struct ToolRow: View {
+/// A tool with its switch, what it lacks right now, and the way to its own settings. Side by side the icon
+/// sits above the name, stacked beside it.
+private struct ToolCard: View {
     let tool: ToolId
     let model: SettingsModel
+    let stacked: Bool
+    let open: () -> Void
 
     var body: some View {
-        let state = model.state(of: tool)
-        SettingsRow(title: tool.name, subtitle: tool.summary) {
-            ToolIcon(tool: tool)
-        } trailing: {
-            HStack(spacing: 12) {
-                ToolStatusLabel(tool: tool, model: model)
-                Toggle("Use \(tool.name)", isOn: model.enabled(tool))
-                    .toggleStyle(.switch)
-                    .labelsHidden()
+        let condition = model.condition(of: tool)
+        VStack(alignment: .leading, spacing: 0) {
+            Group {
+                if stacked {
+                    HStack(spacing: 14) {
+                        ToolIcon(tool: tool, size: 56)
+                        text(condition)
+                        Spacer(minLength: 8)
+                        toggle
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(alignment: .top) {
+                            ToolIcon(tool: tool, size: 60)
+                            Spacer(minLength: 8)
+                            toggle
+                        }
+                        text(condition)
+                    }
+                }
             }
-        }
-        if case .failed(let reason) = state, model.isEnabled(tool) {
-            HStack(spacing: 12) {
-                Label(reason, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
-                Button("Try Again") { model.retry(tool) }
-                    .glassButton()
+            .padding(Card.inset)
+
+            if case .failed(let reason) = condition {
+                RowDivider()
+                FailureRow(reason: reason) { model.retry(tool) }
             }
-            .padding(.leading, Card.textInset)
-            .padding(.trailing, Card.inset)
-            .padding(.bottom, 12)
+            ForEach(model.missingPermissions(of: tool), id: \.self) { permission in
+                RowDivider()
+                MissingPermissionRow(permission: permission, subtitle: permission.reason(for: tool, model.permissions))
+            }
+            Spacer(minLength: 0)
+            RowDivider()
+            Button(action: open) {
+                HStack(spacing: 3) {
+                    Text("Open \(tool.panes[0].title)")
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                }
+            }
+            .buttonStyle(.link)
+            .padding(.horizontal, Card.inset)
+            .padding(.vertical, 11)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .cardBackground()
     }
-}
 
-private struct ToolStatusLabel: View {
-    let tool: ToolId
-    let model: SettingsModel
-
-    var body: some View {
-        let (text, color) = status
-        HStack(spacing: 6) {
-            StatusDot(color: color)
-                .scaleEffect(0.8)
-            Text(text)
+    private func text(_ condition: ToolCondition) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(tool.name)
+                .font(.title3.weight(.semibold))
+            Text(tool.tagline)
                 .font(.callout)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                StatusDot(color: condition.color, size: 7)
+                Text(condition.text(for: tool))
+                    .font(.callout)
+            }
+            .padding(.top, 6)
+            .accessibilityElement(children: .combine)
         }
-        .fixedSize()
     }
 
-    private var status: (text: String, color: Color) {
-        switch model.state(of: tool) {
-        case .running where model.isActive(tool): ("Running", .green)
-        case .running: (tool.inactiveStatus, .orange)
-        case .failed: ("Failed", .red)
-        case .starting, .off: model.isEnabled(tool) ? ("Starting", .orange) : ("Off", Color(white: 0.6))
-        }
+    private var toggle: some View {
+        Toggle("Use \(tool.name)", isOn: model.enabled(tool))
+            .toggleStyle(.switch)
+            .labelsHidden()
     }
 }
 
-private struct PermissionRow: View {
-    let permission: Permission
-    let subtitle: String
-    let granted: Bool
+private struct FailureRow: View {
+    let reason: String
+    let retry: () -> Void
 
     var body: some View {
-        SettingsRow(title: permission.title, subtitle: subtitle) {
-            IconTile(permission.tile, size: 30)
-        } trailing: {
-            if granted {
-                Label("Allowed", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                    .fixedSize()
-            } else {
-                Button("Allow…", action: permission.request)
-                    .glassButton(prominent: true)
+        VStack(alignment: .leading, spacing: 8) {
+            Label(reason, systemImage: "exclamationmark.triangle.fill")
+                .font(.callout)
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Try Again", action: retry)
+                .glassButton()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Card.inset)
+        .padding(.vertical, 12)
+    }
+}
+
+/// The button sits beside the title rather than the text, so the text keeps the card's width.
+private struct MissingPermissionRow: View {
+    let permission: Permission
+    let subtitle: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            IconTile(permission.tile, size: 24)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(permission.title)
+                        .font(.callout.weight(.semibold))
+                    Spacer(minLength: 8)
+                    Button("Allow…", action: permission.request)
+                        .glassButton(prominent: true)
+                        .controlSize(.small)
+                }
+                Text(subtitle)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .padding(.horizontal, Card.inset)
+        .padding(.vertical, 12)
     }
 }

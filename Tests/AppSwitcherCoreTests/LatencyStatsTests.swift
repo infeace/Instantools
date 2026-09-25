@@ -25,6 +25,12 @@ struct LatencyStatsTests {
         #expect(stats.chronological == [2, 3, 4])
     }
 
+    @Test func typicalIsTheMedian() {
+        #expect(LatencyStats().typical == nil)
+        #expect(LatencyStats(chronological: [9, 1, 5, 7, 3]).typical == 5)
+        #expect(LatencyStats(chronological: [4, 2]).typical == 2)
+    }
+
     @Test func formatsMilliseconds() {
         #expect(LatencyStats.milliseconds(12_340_000) == "12.3ms")
         #expect(LatencyStats.milliseconds(20_060_000) == "20.1ms")

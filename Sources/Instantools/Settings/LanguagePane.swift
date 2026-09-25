@@ -1,3 +1,4 @@
+import AppKit
 import InstantoolsCore
 import SwiftUI
 
@@ -8,26 +9,27 @@ struct LanguagePane: View {
         PaneScroll { _ in
             PaneHeader(pane: .language, subtitle: "Switch the keyboard layout with Control+Command, pressed in either order.")
             Hero {
-                ChordPicture(layouts: model.layouts, isActive: model.isActive(.layoutSwitcher))
+                ChordPicture(layouts: model.layouts, current: model.currentLayout, isActive: model.isActive(.layoutSwitcher))
             } bar: {
-                ToolStatusBar(model: model, tool: .layoutSwitcher, status: status, toggleLabel: "Use Control+Command to switch layouts")
+                ToolStatusBar(model: model, tool: .layoutSwitcher, status: status, toggleLabel: "Use InstantLang for Control+Command")
             }
             if model.isEnabled(.layoutSwitcher), !model.inputMonitoringGranted {
                 if model.inputMonitoringSwitchedOff {
                     Callout(
                         permission: .inputMonitoring,
                         title: "Input Monitoring is switched off",
-                        message: "Turn it back on for Instantools, so Language can see Control and Command."
+                        message: "Turn it back on for Instantools, so InstantLang can see Control and Command."
                     )
                 } else {
                     Callout(
                         permission: .inputMonitoring,
                         title: "Allow Input Monitoring",
-                        message: "Language needs it to see Control and Command. Allowing Accessibility for Cmd+Tab covers it too."
+                        message: "InstantLang needs it to see Control and Command. Allowing Accessibility for InstantTab covers it too."
                     )
                 }
             }
-            howItWorks
+            layouts
+            TipsCard()
         }
     }
 
@@ -37,12 +39,12 @@ struct LanguagePane: View {
         }
         switch model.state(of: .layoutSwitcher) {
         case .failed(let reason):
-            return ("Language stopped", reason, .red)
+            return ("InstantLang stopped", reason, .red)
         case .running where !model.isActive(.layoutSwitcher):
             let subtitle = model.inputMonitoringSwitchedOff
                 ? "Turn Input Monitoring back on for Instantools." : "Allow Input Monitoring to start."
             return ("Waiting for permission", subtitle, .orange)
-        case .running where model.layoutTapRunning != nil && model.layouts.count < 2:
+        case .running where model.layouts.count < 2:
             return ("Only one layout", "Add another in System Settings > Keyboard > Text Input.", .orange)
         case .running:
             return ("Control+Command switches the layout", "Press both, in either order, to go back to the last layout.", .green)
@@ -51,29 +53,34 @@ struct LanguagePane: View {
         }
     }
 
-    private var howItWorks: some View {
-        SettingsCard(title: "How it works", footer: "Emoji & Symbols and Dictation are skipped. Left and right keys count the same.") {
-            FactRow("bolt.fill", "Switches the moment both keys are down", "Control then Command, Command then Control, or both at once.")
-            RowDivider(indented: true)
-            FactRow("keyboard", "Typing never cancels it", "Keys typed while the chord is still down never undo the switch, so it sticks in the middle of fast typing.")
-            RowDivider(indented: true)
-            FactRow(
-                "command", "Control+Command shortcuts switch too",
-                "A shortcut such as Control+Command+Q also switches, unless Shift or Option is already held."
-            )
-            RowDivider(indented: true)
-            FactRow("plus", "Add layouts in System Settings", "Keyboard > Text Input. With more than two, it goes back to the one used before.")
+    private var layouts: some View {
+        SettingsCard(title: "Your layouts", footer: "Click a layout to switch to it. Emoji & Symbols and Dictation are skipped.") {
+            if model.layouts.isEmpty { EmptyRow(text: "No keyboard layouts are turned on.") }
+            DividedRows(model.layouts, id: \.id) { layout in
+                LayoutRow(layout: layout, isCurrent: layout.id == model.currentLayout) { model.selectLayout(layout.id) }
+            }
+            RowDivider()
+            SettingsRow(title: "Add or remove layouts", subtitle: "In System Settings, under Keyboard > Text Input.") {
+                Button("Keyboard Settings…") {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .glassButton()
+            }
         }
     }
 }
 
-/// The chord as two key caps, and the layouts it flips between.
+/// The chord as two key caps, and the layouts it switches between with the current one lit.
 private struct ChordPicture: View {
-    let layouts: [String]
+    let layouts: [KeyboardLayout]
+    let current: String?
     let isActive: Bool
+    @Environment(\.compactLayout) private var compact
 
     var body: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: compact ? 12 : 18) {
             HStack(spacing: 14) {
                 KeyCap(symbol: "⌃", name: "control")
                 Image(systemName: "plus")
@@ -81,23 +88,26 @@ private struct ChordPicture: View {
                     .foregroundStyle(.white.opacity(0.85))
                 KeyCap(symbol: "⌘", name: "command")
             }
-            HStack(spacing: 10) {
-                if layouts.isEmpty {
-                    LayoutChip(name: "Your layouts show here while Language is on")
-                } else {
-                    ForEach(Array(layouts.prefix(2).enumerated()), id: \.offset) { index, name in
-                        if index > 0 {
+            VStack(spacing: 10) {
+                FlowLayout(spacing: 10) {
+                    ForEach(Array(layouts.enumerated()), id: \.element.id) { index, layout in
+                        if index == 1, layouts.count == 2 {
                             Image(systemName: "arrow.left.arrow.right")
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(.white.opacity(0.85))
+                                .accessibilityHidden(true)
                         }
-                        LayoutChip(name: name)
-                    }
-                    if layouts.count > 2 {
-                        LayoutChip(name: "+\(layouts.count - 2) more")
+                        LayoutChip(name: layout.name, isCurrent: layout.id == current)
                     }
                 }
+                if layouts.count > 2 {
+                    Text("With more than two, it goes back to the one used before.")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
+                }
             }
+            .padding(.horizontal, 16)
         }
         .opacity(isActive ? 1 : 0.55)
         .saturation(isActive ? 1 : 0)
@@ -105,11 +115,13 @@ private struct ChordPicture: View {
     }
 }
 
-/// Drawn like a modifier key on a Mac keyboard: the symbol top right, the name bottom left.
-private struct KeyCap: View {
+/// Drawn like a modifier key on a Mac keyboard: the symbol top right, the name bottom left. Smaller in a
+/// compact hero, which is shorter, so wrapped layouts still fit below.
+struct KeyCap: View {
     let symbol: String
     let name: String
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.compactLayout) private var compact
 
     var body: some View {
         let dark = colorScheme == .dark
@@ -124,7 +136,7 @@ private struct KeyCap: View {
         }
         .foregroundStyle(dark ? Color.white : Color(white: 0.2))
         .padding(10)
-        .frame(width: 96, height: 72)
+        .frame(width: compact ? 86 : 96, height: compact ? 62 : 72)
         .background(
             shape.fill(dark ? Color(white: 0.2) : Color(white: 0.98))
                 .shadow(color: .black.opacity(0.25), radius: 0, y: 3)
@@ -136,13 +148,134 @@ private struct KeyCap: View {
 
 private struct LayoutChip: View {
     let name: String
+    let isCurrent: Bool
 
     var body: some View {
-        Text(name)
+        let text = Text(name)
             .font(.callout.weight(.semibold))
             .lineLimit(1)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .glassPanel(in: Capsule())
+        Group {
+            if isCurrent {
+                text
+                    .foregroundStyle(.white)
+                    .background(Color.accentColor, in: Capsule())
+                    .shadow(color: .black.opacity(0.2), radius: 6, y: 2)
+            } else {
+                text.glassPanel(in: Capsule())
+            }
+        }
+        .accessibilityValue(isCurrent ? "Current" : "")
+        .accessibilityAddTraits(isCurrent ? .isSelected : [])
+    }
+}
+
+private struct LayoutRow: View {
+    let layout: KeyboardLayout
+    let isCurrent: Bool
+    let select: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: select) {
+            HStack(spacing: 12) {
+                LayoutIcon(layout: layout)
+                    .frame(width: Card.leadingWidth)
+                Text(layout.name)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if isCurrent {
+                    Label("Current", systemImage: "checkmark")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(.tint)
+                }
+            }
+            .padding(.horizontal, Card.inset)
+            .padding(.vertical, 11)
+            .background {
+                if hovering, !isCurrent {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.primary.opacity(0.05))
+                        .padding(4)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel(layout.name)
+        .accessibilityValue(isCurrent ? "Current" : "")
+        .accessibilityHint(isCurrent ? "" : "Switches to this layout")
+        .accessibilityAddTraits(isCurrent ? .isSelected : [])
+    }
+}
+
+/// Its own icon where it has one, as input modes do, else its language in a key-like outline.
+private struct LayoutIcon: View {
+    let layout: KeyboardLayout
+
+    var body: some View {
+        if let icon = layout.icon {
+            Image(nsImage: icon)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 22, height: 22)
+        } else if let badge = layout.badge {
+            Text(badge)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .frame(width: 28, height: 20)
+                .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(.secondary, lineWidth: 1.2))
+        } else {
+            Image(systemName: "keyboard")
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct TipsCard: View {
+    var body: some View {
+        SettingsCard(title: "Tips") {
+            VStack(alignment: .leading, spacing: 12) {
+                Tip(
+                    symbol: "arrow.left.arrow.right", title: "Either order",
+                    detail: "Control first, Command first, or both at once. Left and right keys count the same."
+                )
+                Tip(symbol: "keyboard", title: "Typing never cancels it", detail: "Keys typed while both are still down never undo the switch.")
+                Tip(
+                    symbol: "command", title: "Shortcuts switch too",
+                    detail: "Control+Command+Q and the like also switch, unless Shift or Option is already held."
+                )
+            }
+            .padding(.vertical, 14)
+            .padding(.horizontal, Card.inset)
+        }
+    }
+}
+
+private struct Tip: View {
+    let symbol: String
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.tint)
+                .frame(width: Card.leadingWidth)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.callout.weight(.semibold))
+                Text(detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 }

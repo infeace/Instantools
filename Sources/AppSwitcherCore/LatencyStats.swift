@@ -38,6 +38,11 @@ public struct LatencyStats: Sendable, Equatable {
         return sorted[min(max(rank, 1), sorted.count) - 1]
     }
 
+    /// The median, which Settings and the menu show as the typical time.
+    public var typical: UInt64? {
+        percentile(50)
+    }
+
     public static func milliseconds(_ nanoseconds: UInt64) -> String {
         let tenths = (nanoseconds + 50_000) / 100_000
         return "\(tenths / 10).\(tenths % 10)ms"

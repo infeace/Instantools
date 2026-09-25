@@ -1,7 +1,7 @@
 import Foundation
 import InstantoolsCore
 
-/// Which tools run, kept in the host's own defaults.
+/// Which tools run, and whether InstantTab may have left native Cmd+Tab off, kept in the host's own defaults.
 @MainActor
 enum HostPreferences {
     private static let enabledKey = "enabledTools"
@@ -22,5 +22,12 @@ enum HostPreferences {
 
     static func setEnabled(_ tool: ToolId, _ enabled: Bool) {
         if enabled { enabledTools.insert(tool) } else { enabledTools.remove(tool) }
+    }
+
+    private static let nativeSwitcherKey = "nativeSwitcherMayBeOff"
+
+    static var nativeSwitcher: NativeSwitcherMarker {
+        get { NativeSwitcherMarker(mayBeOff: UserDefaults.standard.bool(forKey: nativeSwitcherKey)) }
+        set { UserDefaults.standard.set(newValue.mayBeOff, forKey: nativeSwitcherKey) }
     }
 }

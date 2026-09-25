@@ -6,44 +6,28 @@ import LayoutSwitcherCore
 /// Keyboard layouts through Text Input Sources, which is not thread safe, so all of it runs on the main thread.
 @MainActor
 final class InputSources: NSObject {
-    private var layouts: [(id: String, source: TISInputSource)] = []
+    private var layouts: [KeyboardLayouts.Layout] = []
     /// The ids of `layouts`, kept so a switch builds no array.
     private var layoutIds: [String] = []
-    private var history = LayoutHistory(current: InputSources.currentId())
-
-    var names: [String] {
-        layouts.map { Self.name($0.source) }
-    }
+    private var history = LayoutHistory(current: KeyboardLayouts.currentId())
 
     override init() {
         super.init()
         reload()
-        // Delivered at once: by default distributed notifications wait while the app is inactive, and an
-        // accessory tool never becomes active.
-        let center = DistributedNotificationCenter.default()
-        center.addObserver(
-            self, selector: #selector(enabledSourcesChanged),
-            name: Notification.Name(kTISNotifyEnabledKeyboardInputSourcesChanged as String), object: nil,
-            suspensionBehavior: .deliverImmediately
-        )
-        center.addObserver(
-            self, selector: #selector(selectedSourceChanged),
-            name: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String), object: nil,
-            suspensionBehavior: .deliverImmediately
-        )
+        KeyboardLayouts.observeChanges(self, enabled: #selector(enabledSourcesChanged), selected: #selector(selectedSourceChanged))
     }
 
     @objc private func enabledSourcesChanged() {
         reload()
     }
 
+    /// Also how a layout picked from Settings or the menu becomes the one to go back from.
     @objc private func selectedSourceChanged() {
-        history.observe(Self.currentId())
+        history.observe(KeyboardLayouts.currentId())
     }
 
     func switchLayout() {
-        let current = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
-        history.observe(Self.id(current))
+        history.observe(KeyboardLayouts.currentId())
         guard let targetId = LayoutPicker.target(among: layoutIds, current: history.current, previous: history.previous),
               let target = layouts.first(where: { $0.id == targetId })?.source
         else { return }
@@ -53,8 +37,8 @@ final class InputSources: NSObject {
     /// Checked against what macOS reports straight after, with one retry, so a dropped switch is not silent.
     private func select(_ source: TISInputSource, id wanted: String) {
         for attempt in 1...2 {
-            let status = TISSelectInputSource(source)
-            if status == noErr, Self.currentId() == wanted {
+            let status = KeyboardLayouts.select(source)
+            if status == noErr, KeyboardLayouts.currentId() == wanted {
                 history.observe(wanted)
                 return
             }
@@ -62,35 +46,9 @@ final class InputSources: NSObject {
         }
     }
 
-    /// Only layouts and input method modes, so a switch never lands on Emoji & Symbols or Dictation.
     private func reload() {
-        let filter = [
-            kTISPropertyInputSourceCategory as String: kTISCategoryKeyboardInputSource as String,
-            kTISPropertyInputSourceIsSelectCapable as String: true,
-        ] as CFDictionary
-        let sources = TISCreateInputSourceList(filter, false)?.takeRetainedValue() as? [TISInputSource] ?? []
-        let types: Set<String> = [kTISTypeKeyboardLayout as String, kTISTypeKeyboardInputMode as String]
-        layouts = sources
-            .filter { Self.string($0, kTISPropertyInputSourceType).map(types.contains) ?? false }
-            .map { (Self.id($0), $0) }
+        layouts = KeyboardLayouts.enabled()
         layoutIds = layouts.map(\.id)
         Diagnostics.log.notice("layouts: \(self.layoutIds.joined(separator: ", "), privacy: .public)")
-    }
-
-    private static func currentId() -> String {
-        id(TISCopyCurrentKeyboardInputSource().takeRetainedValue())
-    }
-
-    private static func id(_ source: TISInputSource) -> String {
-        string(source, kTISPropertyInputSourceID) ?? ""
-    }
-
-    private static func name(_ source: TISInputSource) -> String {
-        string(source, kTISPropertyLocalizedName) ?? id(source)
-    }
-
-    private static func string(_ source: TISInputSource, _ key: CFString) -> String? {
-        guard let raw = TISGetInputSourceProperty(source, key) else { return nil }
-        return Unmanaged<CFString>.fromOpaque(raw).takeUnretainedValue() as String
     }
 }

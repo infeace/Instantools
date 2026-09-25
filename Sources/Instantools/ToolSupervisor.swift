@@ -17,9 +17,25 @@ final class ToolSupervisor {
             runner.onChange = { [weak self] in self?.onChange?() }
             runners[tool] = runner
         }
+        let switcher = runners[.appSwitcher]
+        switcher?.willLaunch = { HostPreferences.nativeSwitcher.startingSwitcher() }
         // The tool restores native Cmd+Tab on its own way out. A kill or a crash it could not handle skips
         // that, so the host does it before anything else.
-        runners[.appSwitcher]?.afterUncleanExit = { NativeSwitcher.restore() }
+        switcher?.didExit = { asked, normally in
+            Self.updateNativeSwitcher { $0.switcherExited(asked: asked, normally: normally) }
+        }
+    }
+
+    /// At launch, before any tool starts. InstantTab turns native Cmd+Tab off again as it starts.
+    func recoverNativeSwitcher(stoppedLeftoverSwitcher: Bool) {
+        Self.updateNativeSwitcher { $0.launched(stoppedLeftoverSwitcher: stoppedLeftoverSwitcher) }
+    }
+
+    /// Restores before the cleared marker is saved, so a host that dies in between restores at its next launch.
+    private static func updateNativeSwitcher(_ step: (inout NativeSwitcherMarker) -> Bool) {
+        var marker = HostPreferences.nativeSwitcher
+        if step(&marker) { NativeSwitcher.restore() }
+        HostPreferences.nativeSwitcher = marker
     }
 
     func state(_ tool: ToolId) -> ToolState {
@@ -52,17 +68,18 @@ final class ToolSupervisor {
         for runner in runners.values { runner.request(.status) }
     }
 
-    /// Blocks for up to the stop timeout, for quitting and termination signals. While Cmd+Tab is on, native
-    /// Cmd+Tab is restored whatever happened: a Cmd+Tab tool killed just before is not waited for here, and
-    /// its exit handler never runs once the host exits. While it is off, the setting may belong to another
+    /// Blocks for up to the stop timeout, for quitting and termination signals. Native Cmd+Tab is restored
+    /// whenever InstantTab may have left it off, even if it was just turned off: a tool killed here or just
+    /// before never has its exit handled once the host exits. Otherwise the setting may belong to another
     /// switcher.
     func stopAllAndWait() {
+        let switcherWasRunning = runners[.appSwitcher]?.hasChild ?? false
         let stopping = runners.values.compactMap { $0.beginStop() }
         let deadline = DispatchTime.now() + ToolLaunch.stopTimeout
         for child in stopping where child.exited.wait(timeout: deadline) != .success {
             kill(child.process.processIdentifier, SIGKILL)
         }
-        if HostPreferences.isEnabled(.appSwitcher) { NativeSwitcher.restore() }
+        Self.updateNativeSwitcher { $0.quitting(switcherWasRunning: switcherWasRunning) }
     }
 }
 
@@ -75,7 +92,9 @@ final class ToolRunner {
     /// The last status reply, nil while the tool is not running.
     private(set) var latest: ToolMessage?
     var onChange: (() -> Void)?
-    var afterUncleanExit: (() -> Void)?
+    var willLaunch: (() -> Void)?
+    /// Whether the host asked it to stop, and whether it exited through `exit()` rather than a signal.
+    var didExit: ((_ asked: Bool, _ normally: Bool) -> Void)?
 
     private var child: Child?
     /// Whether the tool should be running, so a start while the last copy is still stopping is kept.
@@ -102,6 +121,11 @@ final class ToolRunner {
 
     init(tool: ToolId) {
         self.tool = tool
+    }
+
+    /// Also while it is stopping, and after it exited until the main thread has handled that.
+    var hasChild: Bool {
+        child != nil
     }
 
     func start() {
@@ -193,6 +217,7 @@ final class ToolRunner {
                 MainActor.assumeIsolated { self?.exited(child, reason: reason, status: status) }
             }
         }
+        willLaunch?()
         do {
             try process.run()
         } catch {
@@ -227,7 +252,7 @@ final class ToolRunner {
         self.child = nil
         latest = nil
         let asked = child.stopRequested
-        if !asked || reason != .exit { afterUncleanExit?() }
+        didExit?(asked, reason == .exit)
         guard wanted, !asked else {
             state = .off
             if wanted { launch() }

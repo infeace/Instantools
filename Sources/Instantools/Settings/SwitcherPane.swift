@@ -9,7 +9,7 @@ struct SwitcherPane: View {
     var body: some View {
         let status = status
         PaneScroll { _ in
-            PaneHeader(pane: .switcher, subtitle: "How Instantools takes over Cmd+Tab and how the switcher looks.")
+            PaneHeader(pane: .switcher, subtitle: "How InstantTab takes over Cmd+Tab and how the switcher looks.")
             FileProblemBanner(configStore: model.configStore)
             Hero {
                 SwitcherPreview(
@@ -17,7 +17,7 @@ struct SwitcherPane: View {
                     badge: model.isActive(.appSwitcher) ? nil : status.title, appKeys: model.configStore.config.appKeys
                 )
             } bar: {
-                ToolStatusBar(model: model, tool: .appSwitcher, status: status, toggleLabel: "Use Instantools for Cmd+Tab")
+                ToolStatusBar(model: model, tool: .appSwitcher, status: status, toggleLabel: "Use InstantTab for Cmd+Tab")
             }
             if model.isEnabled(.appSwitcher), !model.accessibilityGranted {
                 Callout(
@@ -48,11 +48,11 @@ struct SwitcherPane: View {
         }
         switch model.state(of: .appSwitcher) {
         case .failed(let reason):
-            return ("Cmd+Tab stopped", "\(reason) The macOS switcher is back until you try again.", .red)
+            return ("InstantTab stopped", "\(reason) The macOS switcher is back until you try again.", .red)
         case .running where model.handlesCmdTab == false:
             return ("macOS kept Cmd+Tab", "Its own switcher could not be turned off. Turn this off and on to try again.", .orange)
         case .running:
-            return ("Instantools handles Cmd+Tab", "Hold Cmd and press Tab. Release to switch.", .green)
+            return ("InstantTab handles Cmd+Tab", "Hold Cmd and press Tab. Release to switch.", .green)
         case .starting, .off:
             return ("Starting", "Cmd+Tab opens the macOS switcher until it is ready.", .orange)
         }
@@ -96,15 +96,15 @@ struct SwitcherPane: View {
             }
             RowDivider()
             SettingsRow(
-                title: "Reset Cmd+Tab settings",
+                title: "Reset InstantTab settings",
                 subtitle: "Back to defaults, including app keys, excluded apps, apps that keep Cmd+Tab and monitor groups."
             ) {
                 Button("Reset…", role: .destructive) { confirmingReset = true }
                     .glassButton()
             }
         }
-        .confirmationDialog("Reset Cmd+Tab settings?", isPresented: $confirmingReset) {
-            Button("Reset Cmd+Tab Settings", role: .destructive) { model.configStore.resetToDefaults() }
+        .confirmationDialog("Reset InstantTab settings?", isPresented: $confirmingReset) {
+            Button("Reset InstantTab Settings", role: .destructive) { model.configStore.resetToDefaults() }
         } message: {
             Text("App keys, excluded apps, apps that keep Cmd+Tab and monitor groups are removed too. This cannot be undone.")
         }
@@ -123,12 +123,12 @@ private struct SpeedCard: View {
 
     var body: some View {
         let latency = model.latency
-        let typical = latency.percentile(50)
+        let typical = latency.typical
         let slow = latency.percentile(95)
         let layout = adaptiveLayout(compact: compact, spacing: 18)
         SettingsCard(
             title: "Speed",
-            footer: "Time from pressing Tab to the switcher on screen, after the show delay. One frame on \(model.displayName) is \(String(format: "%.1f", model.frameMilliseconds))ms, the fastest any app can appear."
+            footer: "Time from pressing Tab to the display frame the switcher is drawn for, after the show delay. One frame on \(model.displayName) is \(String(format: "%.1f", model.frameMilliseconds))ms, the fastest any app can appear."
         ) {
             layout {
                 VStack(alignment: .leading, spacing: 4) {

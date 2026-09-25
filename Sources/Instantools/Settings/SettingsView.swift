@@ -20,7 +20,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .keys: "App keys"
         case .monitors: "Monitors"
         case .exclusions: "Excluded apps"
-        case .language: "Language"
+        case .language: "Layouts"
         case .about: "About"
         }
     }
@@ -62,6 +62,14 @@ struct Tile {
 }
 
 extension ToolId {
+    /// In the sidebar under the tool, the first one being where its card on General leads.
+    var panes: [SettingsPane] {
+        switch self {
+        case .appSwitcher: [.switcher, .keys, .monitors, .exclusions]
+        case .layoutSwitcher: [.language]
+        }
+    }
+
     /// The icon of the pane that shows the tool stands for it.
     var tile: Tile {
         switch self {
@@ -95,13 +103,14 @@ struct SettingsView: View {
                 Section {
                     row(.general)
                 }
-                Section(ToolId.appSwitcher.name) {
-                    ForEach([SettingsPane.switcher, .keys, .monitors, .exclusions]) { pane in
-                        row(pane)
+                ForEach(ToolId.allCases) { tool in
+                    Section {
+                        ForEach(tool.panes) { pane in
+                            row(pane)
+                        }
+                    } header: {
+                        ToolSectionHeader(tool: tool, condition: model.condition(of: tool))
                     }
-                }
-                Section(ToolId.layoutSwitcher.name) {
-                    row(.language)
                 }
                 Section {
                     row(.about)
@@ -116,7 +125,7 @@ struct SettingsView: View {
         } detail: {
             Group {
                 switch selection {
-                case .general: GeneralPane(model: model)
+                case .general: GeneralPane(model: model, open: { selection = $0 })
                 case .switcher: SwitcherPane(model: model)
                 case .keys: AppKeysPane(model: model)
                 case .monitors: MonitorsPane(model: model)
@@ -139,6 +148,24 @@ struct SettingsView: View {
             PaneIcon(pane: pane)
         }
         .tag(pane)
+    }
+}
+
+private struct ToolSectionHeader: View {
+    let tool: ToolId
+    let condition: ToolCondition
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ToolIcon(tool: tool, size: 18)
+            Text(tool.name)
+            StatusDot(color: condition.color, size: 6)
+                .padding(.leading, 1)
+        }
+        .help(condition.text(for: tool))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(tool.name), \(condition.text(for: tool))")
+        .accessibilityAddTraits(.isHeader)
     }
 }
 

@@ -37,8 +37,13 @@ struct MessageTests {
     }
 
     @Test func layoutSwitcherStatusRoundTrips() throws {
-        let message = ToolMessage(layoutSwitcher: LayoutSwitcherStatus(tapRunning: true, layouts: ["ABC", "Bulgarian - Phonetic"]))
+        let message = ToolMessage(layoutSwitcher: LayoutSwitcherStatus(tapRunning: true))
         #expect(try roundTrip(message) == message)
+    }
+
+    @Test func layoutsFromAnOlderToolAreIgnored() {
+        let line = Array(#"{"layoutSwitcher":{"tapRunning":true,"layouts":["ABC"]}}"#.utf8)
+        #expect(MessageCoding.decode(ToolMessage.self, from: line) == ToolMessage(layoutSwitcher: LayoutSwitcherStatus(tapRunning: true)))
     }
 
     @Test func unknownFieldsAreIgnored() {

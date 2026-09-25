@@ -5,17 +5,19 @@ import InstantoolsCore
 import SkyLightShim
 import SwiftUI
 
-/// Renders a Settings pane to a PNG and exits. It starts no tool, runs no migration, writes no config and
-/// never touches Cmd+Tab. Capturing its own window needs no Screen Recording permission.
+/// Renders a Settings pane or a welcome step to a PNG and exits. It starts no tool, runs no migration, writes
+/// no config and never touches Cmd+Tab. Capturing its own window needs no Screen Recording permission.
 @MainActor
 enum SettingsSnapshot {
     static func runIfRequested() {
         let arguments = CommandLine.arguments
         guard let flag = arguments.firstIndex(of: "--snapshot-settings") else { return }
         let paneName = arguments.count > flag + 1 ? arguments[flag + 1] : ""
-        guard arguments.count > flag + 2, paneName == "group-editor" || SettingsPane(rawValue: paneName) != nil else {
-            let panes = (SettingsPane.allCases.map(\.rawValue) + ["group-editor"]).joined(separator: "|")
-            FileHandle.standardError.write(Data("usage: Instantools --snapshot-settings <\(panes)> <out.png> [light|dark] [--sample] [--narrow] [--no-access|--input-monitoring-off]\n".utf8))
+        let welcomeStep = WelcomeStep.allCases.first { "welcome-\($0.rawValue)" == paneName }
+        guard arguments.count > flag + 2, paneName == "group-editor" || SettingsPane(rawValue: paneName) != nil || welcomeStep != nil else {
+            let panes = (SettingsPane.allCases.map(\.rawValue) + ["group-editor"] + WelcomeStep.allCases.map { "welcome-\($0.rawValue)" })
+                .joined(separator: "|")
+            FileHandle.standardError.write(Data("usage: Instantools --snapshot-settings <\(panes)> <out.png> [light|dark] [--sample] [--narrow] [--height <points>] [--no-access|--input-monitoring-off]\n".utf8))
             exit(2)
         }
         let output = URL(fileURLWithPath: arguments[flag + 2])
@@ -24,10 +26,26 @@ enum SettingsSnapshot {
         let access = !arguments.contains("--no-access")
         // Accessibility on and Input Monitoring switched off, the one case where the two differ.
         let inputMonitoring = access && !arguments.contains("--input-monitoring-off")
+        let height = arguments.firstIndex(of: "--height").flatMap { arguments.indices.contains($0 + 1) ? Double(arguments[$0 + 1]) : nil } ?? 1500
 
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
         app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        // The icon as drawn, not tinted by this Mac's icon style, so snapshots match on every Mac.
+        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"), let icon = NSImage(contentsOf: url) {
+            app.applicationIconImage = icon
+        }
+
+        if let welcomeStep {
+            let model = WelcomeModel(actions: .init(
+                isEnabled: { _ in false },
+                setEnabled: { _, _ in },
+                permissions: { PermissionState(accessibility: access, inputMonitoring: inputMonitoring) },
+                setStartAtLogin: { _ in },
+                openSettings: {}
+            ), step: welcomeStep)
+            capture(WelcomeWindowController.makeWindow(model: model), to: output)
+        }
 
         let displays = Displays()
         displays.start()
@@ -60,7 +78,10 @@ enum SettingsSnapshot {
                 .map { AppSwitcherStatus.RecentApp(pid: $0.processIdentifier, name: $0.localizedName ?? "App") },
             handlesCmdTab: true
         )
-        let layout = LayoutSwitcherStatus(tapRunning: true, layouts: ["ABC", "Bulgarian - Phonetic"])
+        let layout = LayoutSwitcherStatus(tapRunning: true)
+        // This Mac's own, since reading them changes nothing.
+        let layouts = KeyboardLayoutWatcher()
+        layouts.start()
         let model = SettingsModel(configStore: store, actions: .init(
             toolState: { _ in sample ? .running : .off },
             isEnabled: { _ in sample },
@@ -69,6 +90,9 @@ enum SettingsSnapshot {
             requestStatus: {},
             appSwitcher: { sample ? switcher : nil },
             layoutSwitcher: { sample ? layout : nil },
+            layouts: { layouts.layouts },
+            currentLayout: { layouts.currentId },
+            selectLayout: { _ in },
             displays: { displays.displays },
             mouseDisplay: { displays.mouseDisplayId() },
             accessibilityGranted: { access },
@@ -83,12 +107,16 @@ enum SettingsSnapshot {
             ))
         }
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: arguments.contains("--narrow") ? 720 : 900, height: 1500),
+            contentRect: NSRect(x: 0, y: 0, width: arguments.contains("--narrow") ? 720 : 900, height: height),
             styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false
         )
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.contentView = view
+        capture(window, to: output)
+    }
+
+    private static func capture(_ window: NSWindow, to output: URL) -> Never {
         // Drawn normally but behind the desktop picture, so nothing flashes on screen.
         window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) - 1)
         window.ignoresMouseEvents = true

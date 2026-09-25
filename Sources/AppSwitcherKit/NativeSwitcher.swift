@@ -4,7 +4,8 @@ import SkyLightShim
 
 /// Native Cmd+Tab stays off only while the Cmd+Tab tool handles it. The setting outlives the process, so the
 /// tool restores it on every way out: normal exit, termination signals, and crashes. The host restores it
-/// too whenever the tool exits any other way than a clean stop.
+/// too whenever the tool exits any other way than a clean stop, and at its own quit and next launch while the
+/// tool may have left it off.
 public enum NativeSwitcher {
     /// False when macOS refused, for example because the private call no longer exists.
     public static func disable() -> Bool {

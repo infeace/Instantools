@@ -42,7 +42,7 @@ public struct AppSwitcherStatus: Codable, Equatable, Sendable {
         }
     }
 
-    /// Key press to first frame, oldest first, in nanoseconds.
+    /// Key press to the display frame the panel is drawn for, oldest first, in nanoseconds.
     public var latencySamples: [UInt64]
     /// The display of the frontmost app's window, as Cmd+Tab sees it.
     public var focusedDisplay: UInt32?
@@ -59,14 +59,12 @@ public struct AppSwitcherStatus: Codable, Equatable, Sendable {
     }
 }
 
+/// The layouts are not part of it: the host reads them itself.
 public struct LayoutSwitcherStatus: Codable, Equatable, Sendable {
     public var tapRunning: Bool
-    /// Display names of the layouts Control+Command switches between.
-    public var layouts: [String]
 
-    public init(tapRunning: Bool = false, layouts: [String] = []) {
+    public init(tapRunning: Bool = false) {
         self.tapRunning = tapRunning
-        self.layouts = layouts
     }
 }
 
