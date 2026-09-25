@@ -54,7 +54,7 @@ public enum DisplayRule: Sendable, Hashable {
         // CoreGraphics coordinates grow downwards.
         case .topmost: display.frame.minY == displays.map(\.frame.minY).min()
         case .bottommost: display.frame.maxY == displays.map(\.frame.maxY).max()
-        case .name(let pattern): NSPredicate(format: "SELF LIKE[c] %@", pattern).evaluate(with: display.name)
+        case .name(let pattern): Wildcard.matches(pattern, display.name)
         case .uuid(let uuid): display.uuid.caseInsensitiveCompare(uuid) == .orderedSame
         }
     }

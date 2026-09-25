@@ -36,6 +36,11 @@ struct DisplayGroupsTests {
         #expect(members([]).isEmpty)
     }
 
+    /// Typed on the way to `DELL\*`, it ended the process when matched through NSPredicate.
+    @Test func trailingBackslashInANameMatchesNothingHere() {
+        #expect(members([.name("DELL\\")]).isEmpty)
+    }
+
     @Test func scopeTargets() {
         let groups = ResolvedGroups([
             DisplayGroup(name: "Desk", rules: [.external]),
