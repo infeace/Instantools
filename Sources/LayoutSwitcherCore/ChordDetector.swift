@@ -39,8 +39,9 @@ public struct ChordDetector: Sendable {
         return modifiers == .chord && held.isStrictSubset(of: .chord)
     }
 
-    /// For when events may have been missed, such as across sleep or while the tap was off.
-    public mutating func reset() {
-        held = []
+    /// For when events may have been missed, such as across sleep or while the tap was off. `held` is what is
+    /// down right now, so letting go of Shift from a Ctrl+Cmd+Shift held across the gap is still not a chord.
+    public mutating func reset(to held: Modifiers) {
+        self.held = held
     }
 }

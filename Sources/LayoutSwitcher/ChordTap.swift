@@ -43,7 +43,7 @@ final class ChordTap {
     /// After sleep or a user switch, events may have been missed and macOS may have turned the tap off. False
     /// when that leaves no tap, so the caller can wait for the permission again.
     func recover() -> Bool {
-        detector.reset()
+        detector.reset(to: Self.heldNow())
         if let tap, !CFMachPortIsValid(tap) { self.tap = nil }
         if let tap {
             if !CGEvent.tapIsEnabled(tap: tap) { CGEvent.tapEnable(tap: tap, enable: true) }
@@ -60,12 +60,16 @@ final class ChordTap {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
-            detector.reset()
+            detector.reset(to: Self.heldNow())
             Diagnostics.log.notice("event tap was turned off by macOS, turned back on")
         case .flagsChanged:
             if detector.modifiersChanged(to: Modifiers(eventFlags: flags)) { onChord?() }
         default:
             break
         }
+    }
+
+    private static func heldNow() -> Modifiers {
+        Modifiers(eventFlags: CGEventSource.flagsState(.combinedSessionState).rawValue)
     }
 }

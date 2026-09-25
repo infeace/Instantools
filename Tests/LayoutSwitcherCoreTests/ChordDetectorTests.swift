@@ -50,8 +50,19 @@ struct ChordDetectorTests {
     @Test func resetForgetsAStaleChord() {
         var detector = ChordDetector()
         #expect(switches([[.control], .chord], &detector) == [1])
-        detector.reset() // The releases were missed across sleep.
+        detector.reset(to: []) // The releases were missed across sleep.
         #expect(switches([.chord], &detector) == [0])
+    }
+
+    @Test func resetKeepsWhatIsStillHeld() {
+        var detector = ChordDetector()
+        // Ctrl+Cmd+Shift held across sleep, then Shift let go first.
+        detector.reset(to: [.control, .command, .shift])
+        #expect(switches([.chord, [.command], []], &detector).isEmpty)
+
+        // Ctrl+Cmd held across it: no switch until Control is pressed again.
+        detector.reset(to: .chord)
+        #expect(switches([.chord, [.command], .chord], &detector) == [2])
     }
 
     @Test func modifiersFromEventFlags() {
