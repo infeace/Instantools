@@ -2,18 +2,38 @@
 import PackageDescription
 
 let package = Package(
-    name: "InstantTab",
+    name: "Instantools",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "InstantTab",
-            dependencies: ["InstantTabCore", "SkyLightShim"]
+            name: "Instantools",
+            dependencies: ["InstantoolsCore", "InstantoolsKit", "AppSwitcherCore", "AppSwitcherKit", "SkyLightShim"]
         ),
-        .target(name: "InstantTabCore"),
+        .executableTarget(
+            name: "AppSwitcher",
+            dependencies: ["InstantoolsCore", "InstantoolsKit", "AppSwitcherCore", "AppSwitcherKit", "SkyLightShim"]
+        ),
+        .executableTarget(
+            name: "LayoutSwitcher",
+            dependencies: ["InstantoolsCore", "InstantoolsKit", "LayoutSwitcherCore"]
+        ),
+        .target(name: "InstantoolsCore"),
+        .target(name: "InstantoolsKit", dependencies: ["InstantoolsCore"]),
+        .target(name: "AppSwitcherCore"),
+        .target(name: "AppSwitcherKit", dependencies: ["AppSwitcherCore", "InstantoolsKit", "SkyLightShim"]),
+        .target(name: "LayoutSwitcherCore"),
         .target(name: "SkyLightShim"),
         .testTarget(
-            name: "InstantTabCoreTests",
-            dependencies: ["InstantTabCore"]
+            name: "InstantoolsCoreTests",
+            dependencies: ["InstantoolsCore"]
+        ),
+        .testTarget(
+            name: "AppSwitcherCoreTests",
+            dependencies: ["AppSwitcherCore"]
+        ),
+        .testTarget(
+            name: "LayoutSwitcherCoreTests",
+            dependencies: ["LayoutSwitcherCore"]
         ),
     ]
 )
