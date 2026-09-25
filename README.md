@@ -39,7 +39,7 @@ An app switcher that appears the moment you press Cmd+Tab, with the control macO
 | **Shift, \`, arrows** | Move back, or move with the arrow keys |
 | **Up, Down** | App Exposé for the selected app |
 | **Q, H** | Quit or hide the selected app |
-| **App keys** | Go straight to the app bound to that key (Settings, App Keys) |
+| **App keys** | Go straight to the app bound to that key (Settings, App keys) |
 | **Mouse** | Point to select, click to switch |
 | **Esc** | Cancel |
 
@@ -64,7 +64,7 @@ scripts/build.sh --install --run    # build, copy to ~/Applications and launch
 
 Requires macOS 14 or later and a Swift 6 toolchain (the Xcode command line tools are enough).
 
-`--install` also quits InstantTab and InstantLang and removes their login agents. The apps and their settings stay where they are. On its first launch Instantools copies the Cmd+Tab settings from InstantTab, turns on the tools you used, and turns on Start at login if either old app had it. To go back, turn off Start at login in Instantools and quit it, then open the old app and turn its Start at login back on. While Instantools runs it quits the old apps, since they would fight it for the same keys.
+`--install` also quits InstantTab and InstantLang and removes their login agents. The apps and their settings stay where they are. On its first launch Instantools copies the Cmd+Tab settings from InstantTab, turns on the tools you used, and turns on Start at login if either old app had it. To go back, turn off Start at login in Instantools and quit it, then open the old app and turn its Start at login back on. Each time Instantools starts it quits the old apps if they are running, since they would fight it for the same keys.
 
 On a fresh install Settings opens so you can choose the tools. Quit any other Cmd+Tab replacement first.
 
@@ -73,9 +73,9 @@ On a fresh install Settings opens so you can choose the tools. Quit any other Cm
 Each tool runs as part of Instantools, so macOS asks once and lists only Instantools in Privacy & Security.
 
 - **Accessibility** covers both tools. Cmd+Tab works without it, but the keys inside the switcher and raising the right window need it.
-- **Input Monitoring** is all that Language needs when you use it without Cmd+Tab. With Accessibility allowed it is not needed.
+- **Input Monitoring** is all that Language needs when you use it without Cmd+Tab. With Accessibility allowed it is not needed, unless Input Monitoring is switched off for Instantools: that stops Language and the keys inside the switcher even with Accessibility.
 
-Settings > General shows what each enabled tool is missing, with a button to allow it.
+Settings > General lists Accessibility while any tool is on, and Input Monitoring while a tool that is on is missing it: Language without either permission, or either tool while Input Monitoring is switched off. Each has a button to allow it.
 
 ## Configure
 
@@ -136,7 +136,7 @@ build/Instantools.app/Contents/MacOS/Instantools --snapshot-settings switcher ou
 - [x] Instant switcher, quick tap, mouse, Q and H, exclusions, monitor scopes and groups
 - [x] Settings window with live preview, config file sync, Start at Login
 - [x] App keys: Cmd+Tab, then a bound key, goes straight to that app
-- [x] App Exposé on Up and Down, apps that keep Cmd+Tab, dimmed apps with no visible window
+- [x] App Exposé on Up and Down, apps that keep Cmd+Tab
 - [x] One app for Cmd+Tab and Language, each tool in its own process
 - [ ] Replace InstantTab and InstantLang
 - [ ] Keyboard navigation in Settings

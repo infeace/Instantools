@@ -6,7 +6,7 @@ A macOS menu bar app of small tools where latency is the product, each in its ow
 
 - Only the Xcode command line tools are installed. Run tests with `scripts/test.sh`; plain `swift test` cannot find the Testing module.
 - `scripts/build.sh` builds build/Instantools.app with the tools in Contents/Helpers, and signs it with the local "Instantools Local Signing" identity, or "InstantTab Local Signing" when that is the one this Mac has, so macOS permissions survive rebuilds. `--install --run` replaces the running copy, and also quits InstantTab and InstantLang and removes their login agents, keeping the apps. codesign can wait on a keychain prompt only the user can approve.
-- Do not launch the app to check UI changes: it takes over Cmd+Tab and Control+Command for the whole Mac, and a second layout switcher on the same chord cancels out the first. Render a pane instead with `build/Instantools.app/Contents/MacOS/Instantools --snapshot-settings <general|switcher|keys|monitors|exclusions|language|about|group-editor> <out.png> [light|dark] [--sample] [--narrow] [--no-access]`. It starts no tool, runs no migration and writes nothing.
+- Do not launch the app to check UI changes: it takes over Cmd+Tab and Control+Command for the whole Mac, and a second layout switcher on the same chord cancels out the first. Render a pane instead with `build/Instantools.app/Contents/MacOS/Instantools --snapshot-settings <general|switcher|keys|monitors|exclusions|language|about|group-editor> <out.png> [light|dark] [--sample] [--narrow] [--no-access|--input-monitoring-off]`. It starts no tool, runs no migration and writes nothing.
 - A tool binary run by hand prints a message and exits. Only the host starts tools.
 
 ## Layout
