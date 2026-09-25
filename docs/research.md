@@ -65,7 +65,7 @@ Enumeration is not the bottleneck. The panel is display-bound once it is pre-cre
 
 ### Shortcut interception
 
-- `CGSSetSymbolicHotKeyEnabled(1 and 2, false)` disables the native switcher. The setting persists after the app quits, so it must be restored on quit, on signals and at next launch after a crash.
+- `CGSSetSymbolicHotKeyEnabled(1 and 2, false)` disables the native switcher. The setting persists after the app quits, so it must be restored on quit, on signals and at next launch after a crash. Another switcher can turn the same hotkeys off for itself, so restoring them when nothing of ours turned them off undoes that switcher's setup.
 - Once the native hotkeys are off, Carbon `RegisterEventHotKey` can take Cmd+Tab. Carbon hotkeys need no Accessibility permission and keep working under Secure Input (password fields, Terminal secure keyboard entry). They are delivered on the main thread, so the main thread must stay idle.
 - Modifier release comes from a listen-only session event tap (`flagsChanged`), which needs Input Monitoring. Run it on a dedicated high-priority thread. Secure Input filters `keyDown` from taps but not `flagsChanged`.
 - An active (filtering) tap needs Accessibility and can break third-party input methods if always on (AltTab issue 5766). Arm it only while the switcher is open.
@@ -127,7 +127,7 @@ Enumeration is not the bottleneck. The panel is display-bound once it is pre-cre
 
 Swift 6 and AppKit, built with Swift Package Manager (no Xcode required), assembled into an `.app` bundle and signed with a stable identity by a build script.
 
-- **Input.** Carbon hotkeys for each configured shortcut. Native hotkeys 1 and 2 are disabled while running and restored on quit, signals and next launch. A listen-only session tap on a dedicated thread watches modifiers. An active tap is armed only while the panel is open, for arrows, Esc and in-switcher keys.
+- **Input.** Carbon hotkeys for each configured shortcut. Native hotkeys 1 and 2 are disabled while running and restored on quit and signals, and at the next launch only when the last run may have left them off. A listen-only session tap on a dedicated thread watches modifiers. An active tap is armed only while the panel is open, for arrows, Esc and in-switcher keys.
 - **Model.** Runs off the main thread. It combines workspace KVO, per-app AXObservers with a short messaging timeout, and SkyLight notifications with batched queries. It keeps its own MRU order of windows and publishes an immutable snapshot by atomic swap. The key press reads the snapshot and does no IPC.
 - **Filter.** A pure function from snapshot, shortcut profile, display layout and mouse position to the list of entries. It runs in microseconds and is unit-testable.
 - **Panel.** One pre-created non-activating panel with recycled layer tiles and pre-rendered icons. No SwiftUI, glass or animation on the show path. Whether it needs to become key is to be measured.
@@ -175,7 +175,7 @@ Each shortcut is a profile: keys, scope, entry mode and filters. Example:
 ## Risks
 
 1. Private APIs break on OS updates, macOS 27 in particular. Mitigation: the shim, public fallbacks, and testing before upgrading the OS.
-2. If InstantTab dies, native Cmd+Tab stays disabled. Mitigation: restore on quit, on signals and at launch, keep the app alive with a login agent, and offer a menu item that restores native.
+2. If InstantTab dies, native Cmd+Tab stays disabled. Mitigation: restore on quit, on signals and at the next launch after a crash, keep the app alive with a login agent, and offer a menu item that restores native.
 3. Replacing the binary while it runs can leave taps dead or, per an unconfirmed macOS 26 report, drop input. Mitigation: the build script quits the app first, and filtering taps are armed only while the panel is open.
 4. Windows on other Spaces need a brute-force AX token scan. It is deferred to phase 2.
 5. Thumbnails cost WindowServer load and permission prompts. They are off by default and come later.
@@ -205,6 +205,8 @@ Each tool is its own process, started by the host. Measured on macOS 26.5.1 with
 | Rebuilds signed with the same identity keep TCC grants. | Every build is signed with one local identity. |
 
 A tool whose stdin reaches end of file keeps working for 15 seconds and then exits normally, so Cmd+Tab and layout switching survive a host crash while launchd relaunches the host, and a force-quit host leaves no tools behind for long. The new host stops any tool still running from before, then starts its own.
+
+InstantTab restores native Cmd+Tab on its own way out: its atexit handler covers every `exit()`, including the one after a termination signal, and its crash handlers restore before re-raising. The host restores it too after any exit it did not ask for and after any exit by a signal, since a kill skips the tool's handlers. It never restores otherwise, so someone who runs only InstantLang next to another switcher keeps that switcher's setup. To know when, the host keeps a marker in its defaults, set just before it starts InstantTab and cleared once native Cmd+Tab is known to be back, after any exit it saw. At quit and on termination signals it restores while the marker is set or InstantTab is still running or stopping, even if it was just turned off, because the host exits before it learns how the tool ended. At launch it restores only while the marker is still set, left by a host that crashed or was killed, or after stopping a leftover InstantTab tool or the standalone InstantTab app.
 
 ## Sources
 
