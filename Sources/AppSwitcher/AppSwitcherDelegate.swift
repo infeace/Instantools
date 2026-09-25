@@ -13,8 +13,8 @@ final class AppSwitcherDelegate: NSObject, NSApplicationDelegate {
     private let icons = IconCache()
     private lazy var tracker = WindowTracker(displays: displays)
     private lazy var taps: InputTaps = InputTaps(
-        onCommandReleased: { [weak self] in
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.controller.commandReleased() } }
+        onCommandReleased: { [weak self] nanoseconds in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.controller.commandReleased(eventNanoseconds: nanoseconds) } }
         },
         onSessionKey: { [weak self] key in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.controller.sessionKey(key) } }
@@ -22,19 +22,17 @@ final class AppSwitcherDelegate: NSObject, NSApplicationDelegate {
     )
     private lazy var controller: SwitcherController = SwitcherController(tracker: tracker, displays: displays, icons: icons, taps: taps)
     private let hotKeys = HotKeys()
-    private var permissionPoll: Timer?
+    private lazy var tapPoll = PermissionPoll(
+        allowed: Self.tapsAllowed, start: { [unowned self] in taps.start() }, thenLog: "permissions granted, input taps running"
+    )
     private var handlesCmdTab = false
     private var passThrough = BundleIdMatcher([])
     private var hostObservation: NSKeyValueObservation?
     private lazy var channel = ToolChannel { [unowned self] request in
         switch request.request {
-        case .status: ToolMessage(id: request.id, appSwitcher: status())
+        case .status: ToolMessage(appSwitcher: status())
         }
     }
-    /// Keeps App Nap from stretching the show delay and release timers.
-    private let activity = ProcessInfo.processInfo.beginActivity(
-        options: .userInitiatedAllowingIdleSystemSleep, reason: "Cmd+Tab must respond instantly"
-    )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NativeSwitcher.installExitHandlers()
@@ -45,7 +43,7 @@ final class AppSwitcherDelegate: NSObject, NSApplicationDelegate {
         displays.start()
         displays.onChange = { [weak self] in
             self?.controller.resolveGroups()
-            self?.tracker.refreshWindows()
+            self?.tracker.displaysChanged()
         }
         hotKeys.onPress = { [weak self] action, eventNanoseconds in
             self?.controller.hotKeyPressed(action, eventNanoseconds: eventNanoseconds)
@@ -74,6 +72,11 @@ final class AppSwitcherDelegate: NSObject, NSApplicationDelegate {
         }
         observeHost()
         startTaps()
+        for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.recoverTaps() }
+            }
+        }
         controller.warmUp()
         channel.start()
     }
@@ -119,18 +122,26 @@ final class AppSwitcherDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func startTaps() {
-        if Permissions.accessibility, taps.start() { return }
+    /// Input Monitoring switched off leaves the taps deaf even with Accessibility on.
+    nonisolated private static let tapsAllowed: @Sendable () -> Bool = { Permissions.accessibility && Permissions.inputMonitoring }
 
-        // Until Accessibility is granted, releases are caught by polling and the in-switcher keys do nothing.
-        Permissions.requestAccessibility()
-        permissionPoll = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard Permissions.accessibility, let self, self.taps.start() else { return }
-                self.permissionPoll?.invalidate()
-                self.permissionPoll = nil
-                Diagnostics.log.notice("accessibility granted, input taps running")
-            }
+    private func startTaps() {
+        PermissionPoll.check(Self.tapsAllowed) { [weak self] allowed in
+            guard let self else { return }
+            if allowed, taps.start() { return }
+            // Until both are granted, releases are caught by polling and the in-switcher keys do nothing.
+            Permissions.requestAccessibility()
+            tapPoll.run()
+        }
+    }
+
+    /// After sleep or a user switch. While the poll runs, it starts the taps as soon as it can, and with the
+    /// permissions gone the taps are left as they are.
+    private func recoverTaps() {
+        guard !tapPoll.isPolling else { return }
+        PermissionPoll.check(Self.tapsAllowed) { [weak self] allowed in
+            guard let self, allowed, !tapPoll.isPolling, !taps.recover() else { return }
+            tapPoll.run()
         }
     }
 
@@ -141,13 +152,7 @@ final class AppSwitcherDelegate: NSObject, NSApplicationDelegate {
                 in: tracker.snapshot, frontmostPid: NSWorkspace.shared.frontmostApplication?.processIdentifier,
                 displays: displays.displays
             ),
-            recentApps: controller.previewEntries().prefix(8).map { entry in
-                AppSwitcherStatus.RecentApp(
-                    pid: entry.pid, name: entry.name, hasWindow: entry.windowId != nil, isHidden: entry.isHidden,
-                    key: entry.key.map(String.init)
-                )
-            },
-            tapsRunning: taps.isRunning,
+            recentApps: controller.previewEntries().prefix(8).map { AppSwitcherStatus.RecentApp(pid: $0.pid, name: $0.name) },
             handlesCmdTab: handlesCmdTab
         )
     }

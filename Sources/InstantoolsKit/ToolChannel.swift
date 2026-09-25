@@ -2,7 +2,8 @@ import Foundation
 import InstantoolsCore
 
 /// The tool's end of the pipes to the host: requests on stdin, replies and events on stdout, one JSON object
-/// per line. Writes have their own queue, so a host that stops reading never holds up the tool's main thread.
+/// per line. Encoding and writes have their own queue, so neither a status full of latency samples nor a host
+/// that stops reading holds up the tool's main thread.
 @MainActor
 public final class ToolChannel {
     private let reply: (HostRequest) -> ToolMessage
@@ -13,7 +14,8 @@ public final class ToolChannel {
         self.reply = reply
     }
 
-    /// Call once the tool works, since the host shows it as running from then on.
+    /// Call at the end of launch. The host shows the tool as running from the ready event; whether its tap or
+    /// hotkeys work is in its status.
     public func start() {
         guard !isStarted else { return }
         isStarted = true
@@ -33,9 +35,11 @@ public final class ToolChannel {
         send(ToolMessage(event: .ready))
     }
 
-    public func send(_ message: ToolMessage) {
-        guard let line = MessageCoding.line(message) else { return }
-        output.async { PipeIO.write(line, to: STDOUT_FILENO) }
+    private func send(_ message: ToolMessage) {
+        output.async {
+            guard let line = MessageCoding.line(message) else { return }
+            PipeIO.write(line, to: STDOUT_FILENO)
+        }
     }
 
     private func handle(_ requests: [HostRequest]) {

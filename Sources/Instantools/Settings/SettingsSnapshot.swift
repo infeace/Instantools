@@ -15,13 +15,15 @@ enum SettingsSnapshot {
         let paneName = arguments.count > flag + 1 ? arguments[flag + 1] : ""
         guard arguments.count > flag + 2, paneName == "group-editor" || SettingsPane(rawValue: paneName) != nil else {
             let panes = (SettingsPane.allCases.map(\.rawValue) + ["group-editor"]).joined(separator: "|")
-            FileHandle.standardError.write(Data("usage: Instantools --snapshot-settings <\(panes)> <out.png> [light|dark] [--sample] [--narrow] [--no-access]\n".utf8))
+            FileHandle.standardError.write(Data("usage: Instantools --snapshot-settings <\(panes)> <out.png> [light|dark] [--sample] [--narrow] [--no-access|--input-monitoring-off]\n".utf8))
             exit(2)
         }
         let output = URL(fileURLWithPath: arguments[flag + 2])
         let dark = arguments.count > flag + 3 && arguments[flag + 3] == "dark"
         let sample = arguments.contains("--sample")
         let access = !arguments.contains("--no-access")
+        // Accessibility on and Input Monitoring switched off, the one case where the two differ.
+        let inputMonitoring = access && !arguments.contains("--input-monitoring-off")
 
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
@@ -50,17 +52,12 @@ enum SettingsSnapshot {
                 $0.passThrough = ["com.parallels.desktop.console", "com.apple.ScreenSharing"]
             }
         }
-        // With --sample both tools run, and the fourth app has no visible window, to show it dimmed.
         let switcher = AppSwitcherStatus(
             latencySamples: [6_100_000, 7_400_000, 6_800_000, 8_200_000, 7_000_000, 9_000_000, 6_400_000],
             focusedDisplay: displays.mouseDisplayId(),
             recentApps: NSWorkspace.shared.runningApplications
                 .filter { $0.activationPolicy == .regular && $0 != .current }
-                .enumerated()
-                .map { index, app in
-                    AppSwitcherStatus.RecentApp(pid: app.processIdentifier, name: app.localizedName ?? "App", hasWindow: index != 3)
-                },
-            tapsRunning: access,
+                .map { AppSwitcherStatus.RecentApp(pid: $0.processIdentifier, name: $0.localizedName ?? "App") },
             handlesCmdTab: true
         )
         let layout = LayoutSwitcherStatus(tapRunning: true, layouts: ["ABC", "Bulgarian - Phonetic"])
@@ -75,14 +72,14 @@ enum SettingsSnapshot {
             displays: { displays.displays },
             mouseDisplay: { displays.mouseDisplayId() },
             accessibilityGranted: { access },
-            inputMonitoringGranted: { access }
+            inputMonitoringGranted: { inputMonitoring }
         ))
         let view: NSView = if let pane = SettingsPane(rawValue: paneName) {
             NSHostingView(rootView: SettingsView(model: model, initialPane: pane))
         } else {
             NSHostingView(rootView: GroupEditor(
                 draft: GroupDraft(group: DisplayGroup(name: "Desk", rules: [.external, .name("DELL*")]), originalName: "Desk"),
-                displays: displays.displays, takenNames: ["Laptop"], canSave: true, save: { _ in }
+                displays: displays.displays, takenNames: ["Laptop"], canSave: true, save: { _ in true }
             ))
         }
         let window = NSWindow(

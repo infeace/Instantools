@@ -43,18 +43,16 @@ struct MonitorsPane: View {
         let selection = model.binding(\.scope)
         return SettingsCard(title: "Show apps from") {
             VStack(spacing: 0) {
-                ForEach(Array(model.scopeOptions.enumerated()), id: \.element) { index, option in
-                    if index > 0 { RowDivider(indented: true) }
-                    let color = option.groupName.flatMap { name in model.groups.contains { $0.name == name } ? model.color(ofGroup: name) : nil }
+                DividedRows(model.scopeOptions, id: \.self) { option in
                     ScopeRow(
                         option: option,
-                        groupColor: color,
+                        groupColor: option.groupName.flatMap(model.color(ofGroup:)),
                         isSelected: option == selection.wrappedValue,
                         select: { selection.wrappedValue = option }
                     )
                 }
             }
-            // VoiceOver reads the rows as one radio group, as it did the old picker.
+            // VoiceOver reads the rows as one radio group.
             .accessibilityRepresentation {
                 Picker("Show apps from", selection: selection) {
                     ForEach(model.scopeOptions, id: \.self) { option in
@@ -72,8 +70,7 @@ struct MonitorsPane: View {
             footer: "A group combines monitors, for example every external one. It matches by kind, shape or position, so it keeps working when you swap monitors."
         ) {
             if model.groups.isEmpty { EmptyRow(text: "No groups yet.") }
-            ForEach(Array(model.groups.enumerated()), id: \.element.name) { index, group in
-                if index > 0 { RowDivider(indented: true) }
+            DividedRows(model.groups, id: \.name) { group in
                 GroupRow(
                     group: group,
                     color: model.color(ofGroup: group.name),
@@ -237,7 +234,7 @@ private struct Badge: View {
 
 private struct GroupRow: View {
     let group: DisplayGroup
-    let color: Color
+    let color: Color?
     let members: String
     let edit: () -> Void
     let delete: () -> Void
@@ -247,7 +244,7 @@ private struct GroupRow: View {
             title: group.name,
             subtitle: "\(group.rules.isEmpty ? "No rules yet" : "Matches \(DisplayRule.summary(of: group.rules))")\nNow: \(members)"
         ) {
-            GroupDot(color: color)
+            if let color { GroupDot(color: color) }
         } trailing: {
             HStack(spacing: 8) {
                 Button("Edit…", action: edit)
@@ -269,16 +266,26 @@ struct GroupEditor: View {
     let displays: [Display]
     let takenNames: Set<String>
     let canSave: Bool
-    let save: (DisplayGroup) -> Void
+    /// False when the name turned out to be taken.
+    let save: (DisplayGroup) -> Bool
+    /// Kept when unchecked, so they can be checked again.
+    private let disconnectedUUIDs: [String]
     @State private var group: DisplayGroup
     @State private var namePatterns: String
+    /// Names taken since the sheet opened, found when saving.
+    @State private var refusedNames: Set<String> = []
     @Environment(\.dismiss) private var dismiss
 
-    init(draft: GroupDraft, displays: [Display], takenNames: Set<String>, canSave: Bool, save: @escaping (DisplayGroup) -> Void) {
+    init(draft: GroupDraft, displays: [Display], takenNames: Set<String>, canSave: Bool, save: @escaping (DisplayGroup) -> Bool) {
         self.displays = displays
         self.takenNames = takenNames
         self.canSave = canSave
         self.save = save
+        let connected = Set(displays.map { $0.uuid.lowercased() })
+        var seen = Set<String>()
+        disconnectedUUIDs = draft.group.rules.compactMap(\.uuid).filter { uuid in
+            !connected.contains(uuid.lowercased()) && seen.insert(uuid.lowercased()).inserted
+        }
         _group = State(initialValue: draft.group)
         _namePatterns = State(initialValue: draft.group.rules.compactMap(\.pattern).joined(separator: ", "))
     }
@@ -333,7 +340,7 @@ struct GroupEditor: View {
                 } header: {
                     Text("A monitor is in this group when it matches any of")
                 } footer: {
-                    Text("Main is the display with the menu bar. Names take wildcards * and ?, separated by commas.")
+                    Text("Main is the monitor with the menu bar. Names take wildcards * and ?, separated by commas.")
                         .foregroundStyle(.secondary)
                 }
                 Section {
@@ -361,8 +368,7 @@ struct GroupEditor: View {
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button("Save") {
-                    save(finished)
-                    dismiss()
+                    if save(finished) { dismiss() } else { refusedNames.insert(trimmedName) }
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(saveProblem != nil)
@@ -377,7 +383,7 @@ struct GroupEditor: View {
     private var saveProblem: String? {
         if !canSave { return "The settings file has an error, so changes cannot be saved until it is fixed." }
         if trimmedName.isEmpty { return "A group needs a name." }
-        if takenNames.contains(trimmedName) { return "Another group already has this name." }
+        if takenNames.contains(trimmedName) || refusedNames.contains(trimmedName) { return "Another group already has this name." }
         return nil
     }
 
@@ -396,11 +402,6 @@ struct GroupEditor: View {
     private func sameRule(_ lhs: DisplayRule, _ rhs: DisplayRule) -> Bool {
         if case .uuid(let a) = lhs, case .uuid(let b) = rhs { return a.caseInsensitiveCompare(b) == .orderedSame }
         return lhs == rhs
-    }
-
-    private var disconnectedUUIDs: [String] {
-        let connected = Set(displays.map { $0.uuid.lowercased() })
-        return group.rules.compactMap(\.uuid).filter { !connected.contains($0.lowercased()) }
     }
 
     private func check(_ title: String, _ rule: DisplayRule) -> some View {

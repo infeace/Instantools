@@ -50,9 +50,44 @@ extension SkyLight {
         _ = bytes.withUnsafeMutableBufferPointer { postEventRecordTo(&psn, $0.baseAddress!) }
     }
 
-    public static func windowId(of element: AXUIElement) -> CGWindowID? {
+    /// The AX window with `windowId`. When the private call is missing or reads no id at all, the public
+    /// fallback matches `frame`, in the global top-left coordinates CGWindowList and AX share, which can pick
+    /// another window of the app at the same frame.
+    public static func window(_ windowId: CGWindowID, frame: CGRect?, in windows: [AXUIElement]) -> AXUIElement? {
+        var readAnyId = false
+        for window in windows {
+            guard let id = self.windowId(of: window) else { continue }
+            if id == windowId { return window }
+            readAnyId = true
+        }
+        guard !readAnyId, let frame else { return nil }
+        return windows.first { window in
+            guard let found = self.frame(of: window) else { return false }
+            return abs(found.minX - frame.minX) < 1 && abs(found.minY - frame.minY) < 1
+                && abs(found.width - frame.width) < 1 && abs(found.height - frame.height) < 1
+        }
+    }
+
+    private static func windowId(of element: AXUIElement) -> CGWindowID? {
         guard let axUIElementGetWindow else { return nil }
         var id: CGWindowID = 0
         return axUIElementGetWindow(element, &id) == .success ? id : nil
+    }
+
+    private static func frame(of element: AXUIElement) -> CGRect? {
+        var origin = CGPoint.zero
+        var size = CGSize.zero
+        guard let position = value(kAXPositionAttribute, of: element), AXValueGetValue(position, .cgPoint, &origin),
+              let extent = value(kAXSizeAttribute, of: element), AXValueGetValue(extent, .cgSize, &size)
+        else { return nil }
+        return CGRect(origin: origin, size: size)
+    }
+
+    private static func value(_ attribute: String, of element: AXUIElement) -> AXValue? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXValueGetTypeID()
+        else { return nil }
+        return (value as! AXValue)
     }
 }

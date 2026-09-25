@@ -6,6 +6,10 @@ final class AppLookup {
         var name: String
         var icon: NSImage?
         var isMissing: Bool
+
+        func subtitle(bundleId: String) -> String {
+            isMissing ? "\(bundleId), not installed" : bundleId
+        }
     }
 
     private var cache: [String: Info] = [:]

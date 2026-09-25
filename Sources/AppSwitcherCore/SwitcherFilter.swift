@@ -2,14 +2,13 @@ public enum SwitcherFilter {
     /// `targets` nil means every display. Runs on every key press.
     public static func entries(
         for snapshot: Snapshot,
-        config: Config,
+        windowlessApps: Config.Placement,
         exclusions: ExclusionMatcher,
         appKeys: AppKeyMap = AppKeyMap([]),
         displays: [Display],
         targets: Set<UInt32>?
     ) -> [SwitcherEntry] {
         let windowsByPid = Dictionary(grouping: snapshot.windows, by: \.pid)
-        let liveDisplays = Set(displays.map(\.id))
 
         var listed: [SwitcherEntry] = []
         var trailing: [SwitcherEntry] = []
@@ -18,7 +17,7 @@ public enum SwitcherFilter {
             if exclusions.isExcluded(bundleId: app.bundleId, hasWindows: !windows.isEmpty) { continue }
 
             func entry(_ windowId: UInt32?) -> SwitcherEntry {
-                SwitcherEntry(pid: app.pid, name: app.name, windowId: windowId, key: appKeys.key(for: app.bundleId), isHidden: app.isHidden)
+                SwitcherEntry(pid: app.pid, name: app.name, windowId: windowId, key: appKeys.key(for: app.bundleId))
             }
 
             if let targets {
@@ -30,13 +29,15 @@ public enum SwitcherFilter {
                 }
                 if !windows.isEmpty { continue }
                 // Hidden and minimized apps stay with the display they were last seen on.
-                if let last = snapshot.lastDisplayByPid[app.pid], liveDisplays.contains(last), !targets.contains(last) { continue }
+                if let last = snapshot.lastDisplayByPid[app.pid], displays.contains(where: { $0.id == last }), !targets.contains(last) {
+                    continue
+                }
             } else if let window = windows.first {
                 listed.append(entry(window.id))
                 continue
             }
 
-            switch config.windowlessApps {
+            switch windowlessApps {
             case .show: listed.append(entry(nil))
             case .end: trailing.append(entry(nil))
             case .hide: break

@@ -1,4 +1,5 @@
 import AppKit
+import InstantoolsCore
 
 @main
 struct InstantoolsApp {
@@ -23,11 +24,8 @@ struct InstantoolsApp {
             .filter { $0 > 0 }
         guard !others.isEmpty else { return }
         guard LoginItem.isSupervised else { exit(0) }
-        func alive() -> [pid_t] { others.filter { kill($0, 0) == 0 } }
-        for pid in others { kill(pid, SIGTERM) }
-        // Give them time to stop their tools, which restore native Cmd+Tab and release the hotkeys. Tools of
-        // one that hangs and is killed are found and stopped at launch, before this copy starts its own.
-        for _ in 0..<40 where !alive().isEmpty { usleep(50_000) }
-        for pid in alive() { kill(pid, SIGKILL) }
+        // Longer than a host takes to stop its tools, which restore native Cmd+Tab and release the hotkeys.
+        // Tools of one that hangs and is killed are found and stopped at launch, before this copy starts its own.
+        LeftoverProcesses.terminate(others, timeout: ToolLaunch.stopTimeout + 1)
     }
 }

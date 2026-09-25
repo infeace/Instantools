@@ -24,6 +24,13 @@ struct RestartBackoffTests {
         #expect(backoff.exits == [13, 70])
     }
 
+    @Test func anExitExactlyAMinuteAgoIsForgotten() {
+        var backoff = RestartBackoff()
+        _ = backoff.exited(at: 100)
+        #expect(backoff.exited(at: 100 + RestartBackoff.window) == .restart(afterSeconds: 0))
+        #expect(backoff.exits == [100 + RestartBackoff.window])
+    }
+
     @Test func aToolThatRanForAMinuteStartsOverAtOnce() {
         var backoff = RestartBackoff()
         _ = backoff.exited(at: 0)

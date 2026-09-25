@@ -9,16 +9,20 @@ extension Config {
             self.bundleId = bundleId
         }
 
-        public static func isLetterOrDigit(_ key: Character) -> Bool {
+        static func isLetterOrDigit(_ key: Character) -> Bool {
             key.isASCII && (key.isLowercase || key.isNumber)
         }
 
         /// Q and H stay with quit and hide, like native Cmd+Tab.
-        public static func isBindable(_ key: Character) -> Bool {
+        static func isBindable(_ key: Character) -> Bool {
             isLetterOrDigit(key) && !reserved.contains(key)
         }
 
-        public static let reserved: Set<Character> = ["q", "h"]
+        static let reserved: Set<Character> = ["q", "h"]
+
+        public static func reservedAction(_ key: Character) -> String {
+            key == "q" ? "quits" : "hides"
+        }
     }
 
     public enum AppKeyProblem: Equatable, Sendable {
@@ -79,6 +83,6 @@ extension SwitcherFilter {
         }
         if let entry = listed.first(where: { $0.pid == app.pid }) { return .running(entry) }
         let window = snapshot.windows.first { $0.pid == app.pid }
-        return .running(SwitcherEntry(pid: app.pid, name: app.name, windowId: window?.id, key: key, isHidden: app.isHidden))
+        return .running(SwitcherEntry(pid: app.pid, name: app.name, windowId: window?.id, key: key))
     }
 }

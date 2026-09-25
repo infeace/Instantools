@@ -25,6 +25,13 @@ struct SwitcherSessionTests {
         #expect(session.selectedIndex == 0)
     }
 
+    @Test func reconcileKeepsTheIndexWhenTheSelectedAppQuits() {
+        var session = SwitcherSession(entries: entries([1, 2, 3]), selectedIndex: 1)
+        session.reconcile(with: entries([1, 3]))
+        #expect(session.selectedIndex == 1)
+        #expect(session.selected?.pid == 3)
+    }
+
     @Test func selectIgnoresOutOfRange() {
         var session = SwitcherSession(entries: entries([1, 2, 3]), selectedIndex: 0)
         session.select(2)
@@ -75,6 +82,23 @@ struct DisplayMappingTests {
     @Test func offScreenIsNil() {
         #expect(DisplayMapping.display(for: CGRect(x: -5000, y: 0, width: 100, height: 100), in: displays) == nil)
     }
+
+    @Test func placingDropsWindowsOffEveryDisplay() {
+        let parked = CGRect(x: -5000, y: 0, width: 100, height: 100)
+        let windows = [
+            WindowRecord(id: 1, pid: 7, frame: parked),
+            WindowRecord(id: 2, pid: 7, frame: CGRect(x: 2000, y: 0, width: 400, height: 400)),
+            WindowRecord(id: 3, pid: 8, frame: parked),
+            WindowRecord(id: 4, pid: 7, frame: CGRect(x: 100, y: 100, width: 400, height: 400)),
+        ]
+        let placed = DisplayMapping.placed(windows, on: displays)
+        #expect(placed.windows.map(\.id) == [2, 4])
+        // App 8 has only a parked window, so it has no display and no window.
+        #expect(placed.displayByPid == [7: 2])
+        let unknown = DisplayMapping.placed(windows, on: [])
+        #expect(unknown.windows == windows)
+        #expect(unknown.displayByPid.isEmpty)
+    }
 }
 
 struct SessionKeyTests {
@@ -100,6 +124,11 @@ struct SessionKeyTests {
         #expect(SessionKey(keycode: 18, characters: "") == .app("1"))
     }
 
+    @Test func typedASCIIPunctuationMapsToNothingNotItsUSPosition() {
+        // Dvorak types ' where US has Q, which must not quit the selected app.
+        #expect(SessionKey(keycode: 12, characters: "'") == nil)
+    }
+
     @Test func lettersAndDigitsAreAppKeys() {
         #expect(SessionKey(keycode: 3, characters: "F") == .app("f"))
         #expect(SessionKey(keycode: 29, characters: "0") == .app("0"))
@@ -118,19 +147,5 @@ struct SessionKeyTests {
     @Test func onlyMovesRepeat() {
         #expect(SessionKey.next.repeats && SessionKey.previous.repeats)
         #expect(!SessionKey.quit.repeats && !SessionKey.hide.repeats)
-    }
-}
-
-struct EntryStateTests {
-    @Test func stateDescribesWhatASwitchFinds() {
-        #expect(SwitcherEntry(pid: 1, name: "A", windowId: 10).state == nil)
-        #expect(SwitcherEntry(pid: 1, name: "A", windowId: nil).state == "No visible window")
-        #expect(SwitcherEntry(pid: 1, name: "A", windowId: nil, isHidden: true).state == "Hidden")
-    }
-
-    @Test func filterCarriesHiddenState() {
-        let snapshot = Snapshot(apps: [RunningApp(pid: 1, bundleId: "com.a", name: "A", isHidden: true), RunningApp(pid: 2, bundleId: "com.b", name: "B")])
-        let entries = SwitcherFilter.entries(for: snapshot, config: Config(), exclusions: ExclusionMatcher([]), displays: [], targets: nil)
-        #expect(entries.map(\.isHidden) == [true, false])
     }
 }

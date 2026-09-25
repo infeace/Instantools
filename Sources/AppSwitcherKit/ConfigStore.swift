@@ -9,7 +9,7 @@ import Observation
 @MainActor
 @Observable
 public final class ConfigStore {
-    /// Shared by every tool, one file each.
+    /// Named for Instantools rather than Cmd+Tab, so other tools can keep their files beside this one.
     public static let directory = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/instantools")
     public static let fileURL = directory.appending(path: "cmd-tab.json5")
 
@@ -124,14 +124,23 @@ public final class ConfigStore {
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(300), execute: work)
     }
 
+    /// A refused save leaves the file as it was, which still parses, so the file is not marked broken.
     private func save() {
         saveWork?.cancel()
         saveWork = nil
+        let contents: String
+        do {
+            contents = try config.checkedFileContents()
+        } catch {
+            self.error = "These settings would not read back, so the file was left as it was: \(error.description)"
+            Diagnostics.log.error("config save refused: \(error.description, privacy: .public)")
+            return
+        }
         do {
             try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-            try Data(config.fileContents.utf8).write(to: Self.fileURL, options: .atomic)
+            try Data(contents.utf8).write(to: Self.fileURL, options: .atomic)
         } catch {
-            self.error = "cannot save: \(error.localizedDescription)"
+            self.error = "The file could not be written: \(error.localizedDescription)"
             Diagnostics.log.error("config save: \(error.localizedDescription, privacy: .public)")
         }
     }

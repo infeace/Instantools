@@ -26,8 +26,7 @@ struct AppKeysPane: View {
                 if bindings.isEmpty && recording == nil {
                     EmptyRow(text: "No app keys yet. Add an app, then press the key to use for it.")
                 }
-                ForEach(Array(bindings.enumerated()), id: \.element.key) { index, binding in
-                    if index > 0 { RowDivider(indented: true) }
+                DividedRows(bindings, id: \.key) { binding in
                     row(bundleId: binding.bundleId, key: binding.key, recordingAs: .change(binding.key)) {
                         model.removeAppKey(binding.key)
                     }
@@ -41,6 +40,10 @@ struct AppKeysPane: View {
             .disabled(model.configStore.fileIsBroken)
         }
         .background(KeyCapture(isActive: recording != nil && !model.configStore.fileIsBroken, onKey: handle))
+        // A recorder left armed for a row that is gone would swallow keys with nothing on screen.
+        .onChange(of: bindings.map(\.key)) {
+            if case .change(let key) = recording, !bindings.contains(where: { $0.key == key }) { stopRecording() }
+        }
         .onDisappear(perform: stopRecording)
     }
 
@@ -49,7 +52,7 @@ struct AppKeysPane: View {
         let isRecording = recording == state
         let subtitle = isRecording
             ? problem ?? "Press a letter or digit. Esc cancels."
-            : info.isMissing ? "\(bundleId), not installed" : bundleId
+            : info.subtitle(bundleId: bundleId)
         return AppKeyRow(
             info: info, subtitle: subtitle, isProblem: isRecording && problem != nil, key: key, isRecording: isRecording,
             record: { toggle(state) }, remove: remove
@@ -57,15 +60,9 @@ struct AppKeysPane: View {
     }
 
     @ViewBuilder private var addButtons: some View {
-        Menu("Add Running App") {
-            ForEach(model.runningApps, id: \.bundleId) { app in
-                Button { toggle(.add(bundleId: app.bundleId)) } label: { AppChoiceLabel(app: app) }
-            }
-        }
-        .fixedSize()
-        .disabled(model.runningApps.isEmpty)
+        RunningAppMenu(apps: model.runningApps) { toggle(.add(bundleId: $0)) }
         Button("Choose App…") {
-            if let bundleId = model.chooseApps(title: "Choose an App", prompt: "Choose", multiple: false).first {
+            if let bundleId = model.chooseApps(title: "Choose an app", prompt: "Choose", multiple: false).first {
                 toggle(.add(bundleId: bundleId))
             }
         }
@@ -84,7 +81,8 @@ struct AppKeysPane: View {
     private func handle(_ event: NSEvent) {
         guard let recording else { return }
         guard Int64(event.keyCode) != KeyCode.escape else { return stopRecording() }
-        let key = SessionKey.character(keycode: Int64(event.keyCode), characters: event.charactersIgnoringModifiers ?? "")
+        // With Cmd, as the switcher reads it, since layouts such as Dvorak - QWERTY ⌘ change with Cmd held.
+        let key = SessionKey.character(keycode: Int64(event.keyCode), characters: event.characters(byApplyingModifiers: .command) ?? "")
         let current: Character? = if case .change(let old) = recording { old } else { nil }
         if let problem = model.configStore.config.appKeyProblem(key, replacing: current) {
             self.problem = message(for: problem, key: key)
@@ -103,10 +101,10 @@ struct AppKeysPane: View {
     }
 
     private func message(for problem: Config.AppKeyProblem, key: Character?) -> String {
-        let name = key.map { String($0).uppercased() } ?? ""
+        let name = keyName(key)
         switch problem {
         case .notALetterOrDigit: return "Use a letter or a digit."
-        case .reserved(let key): return "\(name) \(key == "q" ? "quits" : "hides") the selected app, so it is taken."
+        case .reserved(let key): return "\(name) \(Config.AppKey.reservedAction(key)) the selected app, so it is taken."
         case .taken(let bundleId): return "\(name) already goes to \(model.apps.info(for: bundleId).name)."
         }
     }
@@ -135,20 +133,22 @@ private struct AppKeyRow: View {
             Spacer(minLength: 12)
             // A keycap stays small at every width, so the row never stacks.
             Button(action: record) {
-                Text(isRecording ? "Press a key…" : key.map { String($0).uppercased() } ?? "")
+                Text(isRecording ? "Press a key…" : keyName(key))
                     .font(isRecording ? .body : .system(.body, design: .rounded).weight(.semibold))
                     .frame(minWidth: 20)
             }
             .glassButton(prominent: isRecording)
             .help(isRecording ? "Press the key to use, or Esc to cancel" : "Change the key for \(info.name)")
-            .accessibilityLabel(isRecording ? "Waiting for a key for \(info.name)" : "Change key \(keyName) for \(info.name)")
-            RemoveButton(help: key == nil ? "Cancel adding \(info.name)" : "Remove key \(keyName) for \(info.name)", action: remove)
+            .accessibilityLabel(isRecording ? "Waiting for a key for \(info.name)" : "Change key \(keyName(key)) for \(info.name)")
+            RemoveButton(help: key == nil ? "Cancel adding \(info.name)" : "Remove key \(keyName(key)) for \(info.name)", action: remove)
         }
         .padding(.horizontal, Card.inset)
         .padding(.vertical, 12)
     }
+}
 
-    private var keyName: String { key.map { String($0).uppercased() } ?? "" }
+private func keyName(_ key: Character?) -> String {
+    key.map { String($0).uppercased() } ?? ""
 }
 
 /// Receives key presses while the recorder waits, and swallows them so they neither beep nor reach a control.

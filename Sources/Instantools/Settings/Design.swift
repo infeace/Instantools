@@ -1,5 +1,7 @@
 import AppKit
 import AppSwitcherKit
+import InstantoolsCore
+import InstantoolsKit
 import SwiftUI
 
 struct IconTile: View {
@@ -20,18 +22,32 @@ struct IconTile: View {
     }
 }
 
+extension IconTile {
+    init(_ tile: Tile, size: CGFloat) {
+        self.init(symbol: tile.symbol, colors: tile.colors, size: size)
+    }
+}
+
 struct PaneIcon: View {
     let pane: SettingsPane
 
     var body: some View {
-        if pane == .about {
+        if let tile = pane.tile {
+            IconTile(tile, size: 20)
+        } else {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
                 .frame(width: 24, height: 24)
                 .frame(width: 20, height: 20)
-        } else {
-            IconTile(symbol: pane.symbol, colors: pane.colors, size: 20)
         }
+    }
+}
+
+struct ToolIcon: View {
+    let tool: ToolId
+
+    var body: some View {
+        IconTile(tool.tile, size: 30)
     }
 }
 
@@ -193,6 +209,48 @@ struct RowDivider: View {
     }
 }
 
+struct DividedRows<Data: RandomAccessCollection, ID: Hashable, Row: View>: View {
+    let data: Data
+    let id: KeyPath<Data.Element, ID>
+    @ViewBuilder let row: (Data.Element) -> Row
+
+    init(_ data: Data, id: KeyPath<Data.Element, ID>, @ViewBuilder row: @escaping (Data.Element) -> Row) {
+        self.data = data
+        self.id = id
+        self.row = row
+    }
+
+    var body: some View {
+        let first = data.first?[keyPath: id]
+        ForEach(data, id: id) { element in
+            if element[keyPath: id] != first { RowDivider(indented: true) }
+            row(element)
+        }
+    }
+}
+
+struct FactRow: View {
+    let symbol: String
+    let title: String
+    let detail: String
+
+    init(_ symbol: String, _ title: String, _ detail: String) {
+        self.symbol = symbol
+        self.title = title
+        self.detail = detail
+    }
+
+    var body: some View {
+        SettingsRow(title: title, subtitle: detail) {
+            Image(systemName: symbol)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.tint)
+        } trailing: {
+            EmptyView()
+        }
+    }
+}
+
 struct EmptyRow: View {
     let text: String
 
@@ -237,8 +295,22 @@ struct AppIcon: View {
     }
 }
 
-/// A running app in an "Add Running App" menu.
-struct AppChoiceLabel: View {
+struct RunningAppMenu: View {
+    let apps: [SettingsModel.AppChoice]
+    let add: (String) -> Void
+
+    var body: some View {
+        Menu("Add Running App") {
+            ForEach(apps, id: \.bundleId) { app in
+                Button { add(app.bundleId) } label: { AppChoiceLabel(app: app) }
+            }
+        }
+        .fixedSize()
+        .disabled(apps.isEmpty)
+    }
+}
+
+private struct AppChoiceLabel: View {
     let app: SettingsModel.AppChoice
 
     var body: some View {
@@ -315,7 +387,44 @@ struct Callout: View {
     }
 }
 
-/// Shown on every pane. A file that does not parse makes Settings read-only, so it is never overwritten.
+extension Callout {
+    init(permission: Permission, title: String, message: String) {
+        self.init(
+            symbol: permission.tile.symbol, colors: permission.tile.colors, title: title, message: message,
+            action: "Allow…", perform: permission.request
+        )
+    }
+}
+
+enum Permission {
+    case accessibility
+    case inputMonitoring
+
+    var title: String {
+        switch self {
+        case .accessibility: "Accessibility"
+        case .inputMonitoring: "Input Monitoring"
+        }
+    }
+
+    /// Input Monitoring wears Language's colors, since Language is what needs it most.
+    var tile: Tile {
+        switch self {
+        case .accessibility: Tile(symbol: "hand.raised.fill", colors: [.orange, Color(red: 0.93, green: 0.42, blue: 0.1)])
+        case .inputMonitoring: Tile(symbol: "keyboard.fill", colors: Tile.language.colors)
+        }
+    }
+
+    func request() {
+        switch self {
+        case .accessibility: Permissions.requestAccessibilityInSettings()
+        case .inputMonitoring: Permissions.requestInputMonitoringInSettings()
+        }
+    }
+}
+
+/// Shown on the Cmd+Tab panes, for a file that does not parse and for a save that failed. While the file
+/// does not parse their controls are disabled, so only Reset can replace it.
 struct FileProblemBanner: View {
     let configStore: ConfigStore
 
@@ -325,7 +434,7 @@ struct FileProblemBanner: View {
                 symbol: "exclamationmark.triangle.fill",
                 colors: [.red, Color(red: 0.8, green: 0.1, blue: 0.15)],
                 title: configStore.fileIsBroken ? "The settings file has an error" : "Settings could not be saved",
-                message: configStore.fileIsBroken ? "Changes here are paused until it is fixed. \(error)" : error,
+                message: configStore.fileIsBroken ? "Changes here are paused until it is fixed.\n\(error)" : error,
                 action: "Open File",
                 prominent: false,
                 perform: configStore.openInEditor
@@ -404,6 +513,30 @@ extension StatusBar where Trailing == EmptyView {
     }
 }
 
+struct ToolStatusBar: View {
+    let model: SettingsModel
+    let tool: ToolId
+    let status: (title: String, subtitle: String, color: Color)
+    let toggleLabel: String
+    @Environment(\.compactLayout) private var compact
+
+    var body: some View {
+        StatusBar(title: status.title, subtitle: compact ? nil : status.subtitle) {
+            StatusDot(color: status.color)
+        } trailing: {
+            HStack(spacing: 10) {
+                if case .failed = model.state(of: tool) {
+                    Button("Try Again") { model.retry(tool) }
+                        .glassButton()
+                }
+                Toggle(toggleLabel, isOn: model.enabled(tool))
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
+        }
+    }
+}
+
 struct StatusDot: View {
     let color: Color
 
@@ -421,6 +554,12 @@ struct GroupDot: View {
 
     var body: some View {
         Circle().fill(color).frame(width: size, height: size)
+    }
+}
+
+extension URL {
+    var abbreviatedPath: String {
+        (path as NSString).abbreviatingWithTildeInPath
     }
 }
 

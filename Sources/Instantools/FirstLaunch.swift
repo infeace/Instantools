@@ -3,8 +3,9 @@ import AppSwitcherKit
 import InstantoolsCore
 import InstantoolsKit
 
-/// Takes over from InstantTab and InstantLang once. The old apps and their config are never moved or
-/// deleted, so either can be started again to go back.
+/// Takes over from InstantTab and InstantLang once, and their Start at login again after any install that
+/// removes their login agents. The old apps and their config are never moved or deleted, so either can be
+/// started again to go back.
 @MainActor
 enum FirstLaunch {
     private static let doneKey = "firstLaunchDone"
@@ -15,7 +16,10 @@ enum FirstLaunch {
     /// True when nothing was carried over, so Settings should open to choose the tools.
     static func runIfNeeded() -> Bool {
         let defaults = UserDefaults.standard
-        guard !defaults.bool(forKey: doneKey) else { return false }
+        guard !defaults.bool(forKey: doneKey) else {
+            takeOverRemovedAgents()
+            return false
+        }
         let plan = Migration.plan(for: facts())
         Diagnostics.log.notice("first launch: \(String(describing: plan), privacy: .public)")
 
@@ -31,17 +35,30 @@ enum FirstLaunch {
             bootOut(app.agentLabel)
             try? FileManager.default.removeItem(at: LoginItem.agentURL(label: app.agentLabel))
         }
-        if plan.enableStartAtLogin {
-            do {
-                try LoginItem.setEnabled(true)
-            } catch {
-                Diagnostics.log.error("could not turn on Start at login: \(error.localizedDescription, privacy: .public)")
-            }
-        }
+        if plan.enableStartAtLogin { enableStartAtLogin() }
         HostPreferences.enabledTools = plan.enabledTools
         defaults.removeObject(forKey: removedAgentsKey)
         defaults.set(true, forKey: doneKey)
         return plan.showSettings
+    }
+
+    /// An install after the first launch can remove an old app's login agent too, when someone went back to
+    /// it, and then nothing would start at login.
+    private static func takeOverRemovedAgents() {
+        let defaults = UserDefaults.standard
+        let removed = defaults.stringArray(forKey: removedAgentsKey) ?? []
+        guard !removed.isEmpty else { return }
+        Diagnostics.log.notice("install removed login agents of \(removed.joined(separator: ", "), privacy: .public)")
+        enableStartAtLogin()
+        defaults.removeObject(forKey: removedAgentsKey)
+    }
+
+    private static func enableStartAtLogin() {
+        do {
+            try LoginItem.setEnabled(true)
+        } catch {
+            Diagnostics.log.error("could not turn on Start at login: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private static func facts() -> Migration.Facts {

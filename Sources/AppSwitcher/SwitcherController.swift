@@ -28,6 +28,9 @@ final class SwitcherController {
     private var sessionDisplay: UInt32?
     private var sessionTargets: Set<UInt32>?
     private var pressNanoseconds: UInt64 = 0
+    /// The time of the release that ended the last session, when the tap saw it. Zero after any other end,
+    /// whose time on main could be later than a genuine new Cmd+Tab while main is busy.
+    private var releaseNanoseconds: UInt64 = 0
     private var showWork: DispatchWorkItem?
     private var releasePoll: Timer?
     private var exposeWait: Timer?
@@ -66,14 +69,30 @@ final class SwitcherController {
     func hotKeyPressed(_ action: HotKeys.Action, eventNanoseconds: UInt64) {
         if session != nil {
             changeSelection { $0.move(by: action == .forward ? 1 : -1) }
-        } else {
-            begin(reverse: action == .backward, eventNanoseconds: eventNanoseconds)
+            return
+        }
+        let now = DispatchTime.now().uptimeNanoseconds
+        // The key event's own timestamp, when plausible, makes latency include queueing.
+        let pressed = Self.plausible(eventNanoseconds, now: now)
+        // The release reaches main from the tap thread and a Tab through the run loop, in either order. A
+        // Tab pressed before the release that ended the session would otherwise start a new one when it
+        // arrives late, which switches straight back.
+        if let pressed, pressed < releaseNanoseconds { return }
+        begin(reverse: action == .backward, pressNanoseconds: pressed ?? now, now: now)
+    }
+
+    /// `eventNanoseconds` is the release event's own time from the tap, or nil from the poll.
+    func commandReleased(eventNanoseconds: UInt64?) {
+        guard session != nil else { return }
+        commit()
+        if let eventNanoseconds, let released = Self.plausible(eventNanoseconds, now: DispatchTime.now().uptimeNanoseconds) {
+            releaseNanoseconds = released
         }
     }
 
-    func commandReleased() {
-        guard session != nil else { return }
-        commit()
+    /// Event times share DispatchTime's clock.
+    private static func plausible(_ nanoseconds: UInt64, now: UInt64) -> UInt64? {
+        nanoseconds > 0 && nanoseconds <= now && now - nanoseconds < 1_000_000_000 ? nanoseconds : nil
     }
 
     func sessionKey(_ key: SessionKey) {
@@ -163,14 +182,11 @@ final class SwitcherController {
         }
     }
 
-    private func begin(reverse: Bool, eventNanoseconds: UInt64) {
+    private func begin(reverse: Bool, pressNanoseconds: UInt64, now: UInt64) {
         // A new switch replaces an App Exposé still waiting for the last one to land.
         exposeWait?.invalidate()
         exposeWait = nil
-        let now = DispatchTime.now().uptimeNanoseconds
-        // The key event's own timestamp, when plausible, makes latency include queueing.
-        pressNanoseconds = eventNanoseconds > 0 && eventNanoseconds <= now && now - eventNanoseconds < 1_000_000_000
-            ? eventNanoseconds : now
+        self.pressNanoseconds = pressNanoseconds
 
         let frontmost = effectiveFrontmost(now: now)
         let mouseDisplay = displays.mouseDisplayId()
@@ -199,7 +215,8 @@ final class SwitcherController {
             showWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(config.showDelayMs), execute: work)
         }
-        // After the show, since enabling the tap is a WindowServer call. The poll covers a release in between.
+        // After a show with no delay, since enabling the tap is a WindowServer call. The poll covers a release
+        // in between.
         taps.setSessionActive(true)
         startReleasePoll()
         tracker.refreshWindows()
@@ -230,10 +247,16 @@ final class SwitcherController {
 
     private func commit(_ chosen: SwitcherEntry? = nil) {
         guard let entry = chosen ?? session?.selected else { return end() }
-        focuser.focus(entry, closingExpose: takeExposeToClose())
+        focuser.focus(entry, frame: windowFrame(of: entry), closingExpose: takeExposeToClose())
         lastChoice = (entry.pid, NSWorkspace.shared.frontmostApplication?.processIdentifier, DispatchTime.now().uptimeNanoseconds)
         end()
         tracker.noteChosen(entry.pid)
+    }
+
+    /// For raising the window by its frame when AX cannot tell window ids.
+    private func windowFrame(of entry: SwitcherEntry) -> CGRect? {
+        guard let windowId = entry.windowId else { return nil }
+        return tracker.snapshot.windows.first { $0.id == windowId }?.frame
     }
 
     private func takeExposeToClose() -> Bool {
@@ -242,6 +265,7 @@ final class SwitcherController {
     }
 
     private func end() {
+        releaseNanoseconds = 0
         session = nil
         sessionDisplay = nil
         sessionTargets = nil
@@ -258,7 +282,7 @@ final class SwitcherController {
         let timer = Timer(timeInterval: 0.02, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard !CGEventSource.flagsState(.combinedSessionState).contains(.maskCommand) else { return }
-                self?.commandReleased()
+                self?.commandReleased(eventNanoseconds: nil)
             }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -272,7 +296,7 @@ final class SwitcherController {
 
     private func currentEntries(targets: Set<UInt32>?) -> [SwitcherEntry] {
         SwitcherFilter.entries(
-            for: tracker.snapshot, config: config, exclusions: exclusions, appKeys: appKeys,
+            for: tracker.snapshot, windowlessApps: config.windowlessApps, exclusions: exclusions, appKeys: appKeys,
             displays: displays.displays, targets: targets
         )
     }

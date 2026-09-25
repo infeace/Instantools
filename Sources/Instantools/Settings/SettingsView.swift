@@ -17,45 +17,63 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general: "General"
         case .switcher: "Switcher"
-        case .keys: "App Keys"
+        case .keys: "App keys"
         case .monitors: "Monitors"
-        case .exclusions: "Excluded Apps"
+        case .exclusions: "Excluded apps"
         case .language: "Language"
         case .about: "About"
         }
     }
 
-    var symbol: String {
+    /// Nil for About, whose icon is the app's own.
+    var tile: Tile? {
         switch self {
-        case .general: "gearshape.fill"
-        case .switcher: "command"
-        case .keys: "keyboard.fill"
-        case .monitors: "display.2"
-        case .exclusions: "eye.slash.fill"
-        case .language: "globe"
-        case .about: "info"
-        }
-    }
-
-    var colors: [Color] {
-        switch self {
-        case .general: [Color(white: 0.62), Color(white: 0.45)]
-        case .switcher: [Color(red: 0.66, green: 0.47, blue: 1), Color(red: 0.45, green: 0.26, blue: 0.9)]
-        case .keys: [Color(red: 0.36, green: 0.8, blue: 0.47), Color(red: 0.15, green: 0.6, blue: 0.32)]
-        case .monitors: [Color(red: 0.33, green: 0.62, blue: 1), Color(red: 0.13, green: 0.42, blue: 0.93)]
-        case .exclusions: [Color(red: 1, green: 0.42, blue: 0.45), Color(red: 0.88, green: 0.2, blue: 0.33)]
-        case .language: [Color(red: 0.25, green: 0.8, blue: 0.84), Color(red: 0.05, green: 0.56, blue: 0.68)]
-        case .about: [Color(red: 0.38, green: 0.55, blue: 1), Color(red: 0.24, green: 0.25, blue: 0.86)]
+        case .general: .general
+        case .switcher: .switcher
+        case .keys: .keys
+        case .monitors: .monitors
+        case .exclusions: .exclusions
+        case .language: .language
+        case .about: nil
         }
     }
 }
 
+struct Tile {
+    let symbol: String
+    let colors: [Color]
+
+    static let general = Tile(symbol: "gearshape.fill", colors: [Color(white: 0.62), Color(white: 0.45)])
+    static let switcher = Tile(
+        symbol: "command", colors: [Color(red: 0.66, green: 0.47, blue: 1), Color(red: 0.45, green: 0.26, blue: 0.9)]
+    )
+    static let keys = Tile(
+        symbol: "keyboard.fill", colors: [Color(red: 0.36, green: 0.8, blue: 0.47), Color(red: 0.15, green: 0.6, blue: 0.32)]
+    )
+    static let monitors = Tile(
+        symbol: "display.2", colors: [Color(red: 0.33, green: 0.62, blue: 1), Color(red: 0.13, green: 0.42, blue: 0.93)]
+    )
+    static let exclusions = Tile(
+        symbol: "eye.slash.fill", colors: [Color(red: 1, green: 0.42, blue: 0.45), Color(red: 0.88, green: 0.2, blue: 0.33)]
+    )
+    static let language = Tile(
+        symbol: "globe", colors: [Color(red: 0.25, green: 0.8, blue: 0.84), Color(red: 0.05, green: 0.56, blue: 0.68)]
+    )
+}
+
 extension ToolId {
-    /// The pane that shows the tool, whose icon stands for it.
-    var pane: SettingsPane {
+    /// The icon of the pane that shows the tool stands for it.
+    var tile: Tile {
         switch self {
         case .appSwitcher: .switcher
         case .layoutSwitcher: .language
+        }
+    }
+
+    var inactiveStatus: String {
+        switch self {
+        case .appSwitcher: "macOS kept Cmd+Tab"
+        case .layoutSwitcher: "Needs permission"
         }
     }
 }
@@ -156,41 +174,10 @@ private struct SidebarHeader: View {
             return ("A tool stopped", .red)
         }
         if enabled.isEmpty { return ("All tools off", .orange) }
-        return enabled.allSatisfy({ model.state(of: $0) == .running }) ? ("Active", .green) : ("Starting", .orange)
-    }
-}
-
-/// A tool's state as a dot and a word, as the Tools card and the panes show it.
-struct ToolStatusLabel: View {
-    let state: ToolState
-    let isEnabled: Bool
-
-    var body: some View {
-        HStack(spacing: 6) {
-            StatusDot(color: color)
-                .scaleEffect(0.8)
-            Text(text)
-                .font(.callout)
-                .foregroundStyle(.secondary)
+        if let inactive = enabled.first(where: { model.state(of: $0) == .running && !model.isActive($0) }) {
+            return (inactive.inactiveStatus, .orange)
         }
-        .fixedSize()
-    }
-
-    private var text: String {
-        switch state {
-        case .running: "Running"
-        case .starting: isEnabled ? "Starting" : "Off"
-        case .failed: "Failed"
-        case .off: isEnabled ? "Starting" : "Off"
-        }
-    }
-
-    private var color: Color {
-        switch state {
-        case .running: .green
-        case .failed: .red
-        case .starting, .off: isEnabled ? .orange : Color(white: 0.6)
-        }
+        return enabled.allSatisfy(model.isActive) ? ("Active", .green) : ("Starting", .orange)
     }
 }
 

@@ -34,4 +34,8 @@ struct NameLabelTests {
         #expect(label.x == label.x.rounded())
         #expect(abs(label.x + label.width / 2 - 64) <= 0.5)
     }
+
+    @Test func fractionalMaxWidthAtTheRightEdgeLandsOnWholePoints() {
+        #expect(span(400, under: 364, maxWidth: 247.5) == (x: 167, width: 247))
+    }
 }

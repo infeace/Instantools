@@ -1,50 +1,33 @@
 import InstantoolsCore
-import InstantoolsKit
 import SwiftUI
 
 struct LanguagePane: View {
     let model: SettingsModel
 
     var body: some View {
-        PaneScroll { compact in
+        PaneScroll { _ in
             PaneHeader(pane: .language, subtitle: "Switch the keyboard layout with Control+Command, pressed in either order.")
             Hero {
-                ChordPicture(layouts: model.layouts, isActive: isActive)
+                ChordPicture(layouts: model.layouts, isActive: model.isActive(.layoutSwitcher))
             } bar: {
-                statusBar(compact: compact)
+                ToolStatusBar(model: model, tool: .layoutSwitcher, status: status, toggleLabel: "Use Control+Command to switch layouts")
             }
-            if model.needsInputMonitoring {
-                Callout(
-                    symbol: "keyboard.fill",
-                    colors: SettingsPane.language.colors,
-                    title: "Allow Input Monitoring",
-                    message: "Language needs it to see Control and Command. Allowing Accessibility for Cmd+Tab covers it too.",
-                    action: "Allow…",
-                    perform: Permissions.requestInputMonitoringInSettings
-                )
+            if model.isEnabled(.layoutSwitcher), !model.inputMonitoringGranted {
+                if model.inputMonitoringSwitchedOff {
+                    Callout(
+                        permission: .inputMonitoring,
+                        title: "Input Monitoring is switched off",
+                        message: "Turn it back on for Instantools, so Language can see Control and Command."
+                    )
+                } else {
+                    Callout(
+                        permission: .inputMonitoring,
+                        title: "Allow Input Monitoring",
+                        message: "Language needs it to see Control and Command. Allowing Accessibility for Cmd+Tab covers it too."
+                    )
+                }
             }
             howItWorks
-        }
-    }
-
-    private var isActive: Bool {
-        model.state(of: .layoutSwitcher) == .running && model.layoutTapRunning != false
-    }
-
-    private func statusBar(compact: Bool) -> some View {
-        let status = status
-        return StatusBar(title: status.title, subtitle: compact ? nil : status.subtitle) {
-            StatusDot(color: status.color)
-        } trailing: {
-            HStack(spacing: 10) {
-                if case .failed = model.state(of: .layoutSwitcher) {
-                    Button("Try Again") { model.retry(.layoutSwitcher) }
-                        .glassButton()
-                }
-                Toggle("Use Control+Command to switch layouts", isOn: model.enabled(.layoutSwitcher))
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-            }
         }
     }
 
@@ -55,8 +38,10 @@ struct LanguagePane: View {
         switch model.state(of: .layoutSwitcher) {
         case .failed(let reason):
             return ("Language stopped", reason, .red)
-        case .running where model.layoutTapRunning == false:
-            return ("Waiting for permission", "Allow Input Monitoring or Accessibility to start.", .orange)
+        case .running where !model.isActive(.layoutSwitcher):
+            let subtitle = model.inputMonitoringSwitchedOff
+                ? "Turn Input Monitoring back on for Instantools." : "Allow Input Monitoring to start."
+            return ("Waiting for permission", subtitle, .orange)
         case .running where model.layoutTapRunning != nil && model.layouts.count < 2:
             return ("Only one layout", "Add another in System Settings > Keyboard > Text Input.", .orange)
         case .running:
@@ -68,23 +53,16 @@ struct LanguagePane: View {
 
     private var howItWorks: some View {
         SettingsCard(title: "How it works", footer: "Emoji & Symbols and Dictation are skipped. Left and right keys count the same.") {
-            fact("bolt.fill", "Switches the moment both keys are down", "Control then Command, Command then Control, or both at once.")
+            FactRow("bolt.fill", "Switches the moment both keys are down", "Control then Command, Command then Control, or both at once.")
             RowDivider(indented: true)
-            fact("keyboard", "Typing never cancels it", "Keys typed while the chord is still down never undo the switch, so it sticks in the middle of fast typing.")
+            FactRow("keyboard", "Typing never cancels it", "Keys typed while the chord is still down never undo the switch, so it sticks in the middle of fast typing.")
             RowDivider(indented: true)
-            fact("command", "Ctrl+Cmd shortcuts switch too", "A shortcut such as Ctrl+Cmd+Q also switches, unless Shift or Option is already held.")
+            FactRow(
+                "command", "Control+Command shortcuts switch too",
+                "A shortcut such as Control+Command+Q also switches, unless Shift or Option is already held."
+            )
             RowDivider(indented: true)
-            fact("plus", "Add layouts in System Settings", "Keyboard > Text Input. With more than two, it goes back to the one used before.")
-        }
-    }
-
-    private func fact(_ symbol: String, _ title: String, _ detail: String) -> some View {
-        SettingsRow(title: title, subtitle: detail) {
-            Image(systemName: symbol)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.tint)
-        } trailing: {
-            EmptyView()
+            FactRow("plus", "Add layouts in System Settings", "Keyboard > Text Input. With more than two, it goes back to the one used before.")
         }
     }
 }

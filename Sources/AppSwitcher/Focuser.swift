@@ -10,15 +10,16 @@ final class Focuser: Sendable {
     private let generation = OSAllocatedUnfairLock(initialState: 0)
 
     /// `closingExpose` is set after the switcher opened App Exposé, which would otherwise stay over the app.
-    func focus(_ entry: SwitcherEntry, closingExpose: Bool = false) {
+    /// `frame` is the window's, for finding it where AX cannot tell window ids.
+    func focus(_ entry: SwitcherEntry, frame: CGRect?, closingExpose: Bool) {
         let token = nextToken()
-        queue.async { [self] in perform(entry, token: token) }
+        queue.async { [self] in perform(entry, frame: frame, token: token) }
         // After the switch, so App Exposé closes onto the new app instead of the one it was showing.
         if closingExpose { queue.async { Self.closeExpose() } }
     }
 
     /// For an app key whose app is not running. Opening it cancels any focus still in flight.
-    func launch(bundleId: String, closingExpose: Bool = false) {
+    func launch(bundleId: String, closingExpose: Bool) {
         _ = nextToken()
         queue.async {
             defer { if closingExpose { Self.closeExpose() } }
@@ -45,7 +46,7 @@ final class Focuser: Sendable {
         generation.withLock { $0 == token }
     }
 
-    private func perform(_ entry: SwitcherEntry, token: Int) {
+    private func perform(_ entry: SwitcherEntry, frame: CGRect?, token: Int) {
         guard isCurrent(token), let app = NSRunningApplication(processIdentifier: entry.pid) else { return }
         if app.isHidden { app.unhide() }
 
@@ -55,34 +56,37 @@ final class Focuser: Sendable {
         guard let windowId = entry.windowId else {
             guard let url = app.bundleURL else { return activate(app, token: token) }
             NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { [self] _, error in
-                if error != nil { activate(app, token: token) }
+                if error != nil, isCurrent(token) { activate(app, token: token) }
             }
             return
         }
         guard SkyLight.focus(pid: entry.pid, windowId: windowId) else { return activate(app, token: token) }
         guard AXIsProcessTrusted() else { return }
-        raiseQueue.async { [self] in
-            guard isCurrent(token) else { return }
-            raise(windowId, of: entry.pid)
-        }
+        raiseQueue.async { [self] in raise(windowId, frame: frame, of: entry.pid, token: token) }
     }
 
-    /// macOS can decline an activation and still report success, so this checks that it happened.
+    /// macOS can decline an activation and still report success, so this checks that it happened. If not,
+    /// SkyLight focuses the app, or failing that it is opened like a Dock click.
     private func activate(_ app: NSRunningApplication, token: Int) {
         app.activate(options: .activateAllWindows)
         queue.asyncAfter(deadline: .now() + .milliseconds(150)) { [self] in
             guard isCurrent(token), !app.isActive else { return }
-            SkyLight.focus(pid: app.processIdentifier, windowId: 0)
+            if SkyLight.focus(pid: app.processIdentifier, windowId: 0) { return }
+            guard let url = app.bundleURL else { return }
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
         }
     }
 
-    /// The front-process call alone does not reorder an app's own windows.
-    private func raise(_ windowId: UInt32, of pid: pid_t) {
+    /// The front-process call alone does not reorder an app's own windows. Each AX call can take up to the
+    /// messaging timeout on a busy app, so a newer switch may have taken over by the time the window is found.
+    private func raise(_ windowId: UInt32, frame: CGRect?, of pid: pid_t, token: Int) {
+        guard isCurrent(token) else { return }
         let app = AXUIElementCreateApplication(pid)
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
               let windows = value as? [AXUIElement],
-              let window = windows.first(where: { SkyLight.windowId(of: $0) == windowId })
+              let window = SkyLight.window(windowId, frame: frame, in: windows),
+              isCurrent(token)
         else { return }
         AXUIElementPerformAction(window, kAXRaiseAction as CFString)
     }

@@ -5,12 +5,7 @@ import AppSwitcherKit
 /// Created once and reused: showing it only sets layer frames and contents. No SwiftUI, blur or animation.
 @MainActor
 final class SwitcherPanel {
-    private enum Metrics {
-        static let padding: CGFloat = 14
-        static let tileInset: CGFloat = 10
-        static let nameHeight: CGFloat = 26
-        static let screenMargin: CGFloat = 40
-    }
+    private static let screenMargin: CGFloat = 40
 
     private let icons: IconCache
     private let panel: NSPanel
@@ -22,15 +17,14 @@ final class SwitcherPanel {
     private var tiles: [CALayer] = []
     private var badges: [CALayer] = []
     private var tileSize: CGFloat = 0
-    private var tileInset: CGFloat = 0
     private var panelWidth: CGFloat = 0
     private var entries: [SwitcherEntry] = []
     private var isVisible = false
     private var selectedIndex = 0
     /// A pid, since the list can change between mouse-down and mouse-up.
     private var pressedPid: Int32?
-    /// Built and measured once per name and state, since the selection moves on every Tab. The colors are
-    /// part of the text, so it is rebuilt when the appearance changes.
+    /// Built and measured once per name, since the selection moves on every Tab. The colors are part of the
+    /// text, so it is rebuilt when the appearance changes.
     private var nameTexts: [String: (text: NSAttributedString, width: CGFloat)] = [:]
     private var isDark = false
 
@@ -56,9 +50,9 @@ final class SwitcherPanel {
         mouseView.onMouse = { [weak self] type, point in self?.handleMouse(type, at: point) }
         panel.contentView = mouseView
 
-        background.cornerRadius = 22
+        background.cornerRadius = PanelStyle.cornerRadius
         background.cornerCurve = .continuous
-        highlight.cornerRadius = 14
+        highlight.cornerRadius = PanelStyle.highlightCornerRadius
         highlight.cornerCurve = .continuous
         nameLayer.alignmentMode = .center
         nameLayer.truncationMode = .end
@@ -129,23 +123,23 @@ final class SwitcherPanel {
     }
 
     private func index(at point: CGPoint) -> Int? {
-        let row = CGRect(x: Metrics.padding, y: Metrics.padding + Metrics.nameHeight, width: CGFloat(entries.count) * tileSize, height: tileSize)
+        let row = CGRect(x: PanelStyle.padding, y: PanelStyle.padding + PanelStyle.nameHeight, width: CGFloat(entries.count) * tileSize, height: tileSize)
         guard tileSize > 0, row.contains(point) else { return nil }
-        let index = Int((point.x - Metrics.padding) / tileSize)
+        let index = Int((point.x - PanelStyle.padding) / tileSize)
         return entries.indices.contains(index) ? index : nil
     }
 
     private func layout(entries: [SwitcherEntry], selected: Int, on screen: NSScreen, iconSize: CGFloat) {
         self.entries = entries
         let count = CGFloat(entries.count)
-        let available = screen.visibleFrame.width - 2 * Metrics.screenMargin - 2 * Metrics.padding
-        tileSize = min(iconSize + 2 * Metrics.tileInset, available / count).rounded(.down)
-        tileInset = min(Metrics.tileInset, (tileSize * 0.1).rounded(.down))
+        let available = screen.visibleFrame.width - 2 * Self.screenMargin - 2 * PanelStyle.padding
+        tileSize = min(PanelStyle.tileSize(iconSize: iconSize), available / count).rounded(.down)
+        let tileInset = PanelStyle.tileInset(tile: tileSize)
         let icon = tileSize - 2 * tileInset
 
         let size = CGSize(
-            width: 2 * Metrics.padding + count * tileSize,
-            height: 2 * Metrics.padding + tileSize + Metrics.nameHeight
+            width: 2 * PanelStyle.padding + count * tileSize,
+            height: 2 * PanelStyle.padding + tileSize + PanelStyle.nameHeight
         )
         let origin = CGPoint(x: (screen.frame.midX - size.width / 2).rounded(), y: (screen.frame.midY - size.height / 2).rounded())
         let sizeChanged = panel.frame.size != size
@@ -159,10 +153,10 @@ final class SwitcherPanel {
         CATransaction.setDisableActions(true)
         root.contentsScale = scale
         background.frame = CGRect(origin: .zero, size: size)
-        background.backgroundColor = (dark ? NSColor(white: 0.14, alpha: 0.9) : NSColor(white: 0.96, alpha: 0.9)).cgColor
+        background.backgroundColor = PanelStyle.background(dark: dark).cgColor
         background.borderWidth = 1 / scale
-        background.borderColor = (dark ? NSColor(white: 1, alpha: 0.12) : NSColor(white: 0, alpha: 0.1)).cgColor
-        highlight.backgroundColor = (dark ? NSColor(white: 1, alpha: 0.16) : NSColor(white: 0, alpha: 0.1)).cgColor
+        background.borderColor = PanelStyle.border(dark: dark).cgColor
+        highlight.backgroundColor = PanelStyle.highlight(dark: dark).cgColor
         nameLayer.contentsScale = scale
         if dark != isDark {
             isDark = dark
@@ -191,10 +185,9 @@ final class SwitcherPanel {
             tile.isHidden = false
             tile.contents = icons.icon(for: entries[index].pid)
             tile.contentsScale = scale
-            tile.opacity = entries[index].state == nil ? 1 : Self.dimmedOpacity
             tile.frame = CGRect(
-                x: Metrics.padding + CGFloat(index) * tileSize + tileInset,
-                y: Metrics.padding + Metrics.nameHeight + tileInset,
+                x: PanelStyle.padding + CGFloat(index) * tileSize + tileInset,
+                y: PanelStyle.padding + PanelStyle.nameHeight + tileInset,
                 width: icon, height: icon
             )
             let image = entries[index].key.flatMap(PanelStyle.badgeImage)
@@ -211,27 +204,24 @@ final class SwitcherPanel {
     private func placeSelection(_ index: Int) {
         guard entries.indices.contains(index) else { return }
         selectedIndex = index
-        let x = Metrics.padding + CGFloat(index) * tileSize
-        highlight.frame = CGRect(x: x, y: Metrics.padding + Metrics.nameHeight, width: tileSize, height: tileSize)
+        let x = PanelStyle.padding + CGFloat(index) * tileSize
+        highlight.frame = CGRect(x: x, y: PanelStyle.padding + PanelStyle.nameHeight, width: tileSize, height: tileSize)
         let name = nameText(for: entries[index])
         let label = NameLabel.span(
-            textWidth: name.width, maxWidth: max(tileSize * 2.5, 160),
-            centeredOn: x + tileSize / 2, within: Metrics.padding...(panelWidth - Metrics.padding)
+            textWidth: name.width, maxWidth: PanelStyle.nameMaxWidth(tile: tileSize),
+            centeredOn: x + tileSize / 2, within: PanelStyle.padding...(panelWidth - PanelStyle.padding)
         )
-        nameLayer.frame = CGRect(x: label.x, y: Metrics.padding, width: label.width, height: Metrics.nameHeight - 6)
+        nameLayer.frame = CGRect(x: label.x, y: PanelStyle.padding, width: label.width, height: PanelStyle.nameLabelHeight)
         nameLayer.string = name.text
     }
 
     private func nameText(for entry: SwitcherEntry) -> (text: NSAttributedString, width: CGFloat) {
-        let key = entry.state.map { "\(entry.name)\u{0}\($0)" } ?? entry.name
-        if let cached = nameTexts[key] { return cached }
-        let text = PanelStyle.nameText(name: entry.name, state: entry.state, dark: isDark)
+        if let cached = nameTexts[entry.name] { return cached }
+        let text = PanelStyle.nameText(name: entry.name, dark: isDark)
         let result = (text, PanelStyle.width(of: text))
-        nameTexts[key] = result
+        nameTexts[entry.name] = result
         return result
     }
-
-    static let dimmedOpacity = PanelStyle.dimmedOpacity
 }
 
 private final class MouseView: NSView {

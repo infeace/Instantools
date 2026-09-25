@@ -37,11 +37,11 @@ enum LeftoverProcesses {
         }
     }
 
-    /// SIGTERM, then SIGKILL for any still there after the stop timeout.
-    static func terminate(_ pids: [pid_t]) {
+    /// SIGTERM, then SIGKILL for any still there after `timeout` seconds.
+    static func terminate(_ pids: [pid_t], timeout: Double = ToolLaunch.stopTimeout) {
         func alive() -> [pid_t] { pids.filter { kill($0, 0) == 0 } }
         for pid in pids { kill(pid, SIGTERM) }
-        let deadline = Date().addingTimeInterval(ToolLaunch.stopTimeout)
+        let deadline = Date().addingTimeInterval(timeout)
         while !alive().isEmpty, Date() < deadline { usleep(50_000) }
         let stuck = alive()
         guard !stuck.isEmpty else { return }

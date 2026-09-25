@@ -2,7 +2,7 @@ import Foundation
 
 public enum AltTabImport {
     /// Reads AltTab's `exceptions` preference. Its `hide` is "1" for always and "2" for when the app has
-    /// no open window; `ignore` (shortcuts off in fullscreen) has no equivalent here.
+    /// no open window. Its `ignore` is not imported.
     public static func exclusions(fromExceptionsJSON json: String) -> [Config.Exclusion] {
         guard let data = json.data(using: .utf8),
               let rules = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]

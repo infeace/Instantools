@@ -34,8 +34,23 @@ struct ConfigTests {
         #expect(parsed.warnings.isEmpty)
     }
 
+    @Test func checkedFileContentsRefuseWhatWouldNotReadBack() throws {
+        var config = Config()
+        config.showDelayMs = 0
+        #expect(try config.checkedFileContents() == config.fileContents)
+        config.iconSize = 10
+        #expect(throws: ConfigError.invalid("iconSize must be a number from 32 to 256")) {
+            try config.checkedFileContents()
+        }
+        config = Config()
+        config.exclude = [.init(bundleId: "*")]
+        #expect(throws: ConfigError.invalid("the file would read back as different settings")) {
+            try config.checkedFileContents()
+        }
+    }
+
     @Test func scopeValues() throws {
-        for scope: Config.Scope in [.all, .mouseDisplay, .focusedDisplay, .mouseGroup, .group("Desk")] {
+        for scope: Config.Scope in [.all, .mouseDisplay, .focusedDisplay, .mouseGroup, .group("Desk"), .group("\u{301}Desk")] {
             #expect(Config.Scope(rawValue: scope.rawValue) == scope)
         }
         #expect(Config.Scope(rawValue: "group:") == nil)
@@ -46,7 +61,7 @@ struct ConfigTests {
         #expect(throws: ConfigError.invalid("displayGroups has two groups named \"A\"")) {
             try parse("{ displayGroups: [{ name: \"A\", match: [] }, { name: \"A\", match: [] }] }")
         }
-        #expect(throws: ConfigError.self) {
+        #expect(throws: ConfigError.invalid(#"displayGroups[0].match[0] must be one of "builtIn", "external", "landscape", "portrait", "main", "leftmost", "rightmost", "topmost", "bottommost", { name: "..." } or { uuid: "..." }"#)) {
             try parse("{ displayGroups: [{ name: \"A\", match: [\"sideways\"] }] }")
         }
         let parsed = try parse("{ scope: \"group:Gone\" }")

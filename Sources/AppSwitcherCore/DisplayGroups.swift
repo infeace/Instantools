@@ -22,7 +22,7 @@ public enum DisplayRule: Sendable, Hashable {
         .builtIn, .external, .landscape, .portrait, .main, .leftmost, .rightmost, .topmost, .bottommost,
     ]
 
-    public var keyword: String? {
+    var keyword: String? {
         switch self {
         case .builtIn: "builtIn"
         case .external: "external"
@@ -37,7 +37,7 @@ public enum DisplayRule: Sendable, Hashable {
         }
     }
 
-    public init?(keyword: String) {
+    init?(keyword: String) {
         guard let rule = Self.keywords.first(where: { $0.keyword == keyword }) else { return nil }
         self = rule
     }
@@ -75,7 +75,7 @@ public struct DisplayGroup: Sendable, Equatable {
 }
 
 /// Group membership for the connected displays, computed when displays or config change so the key
-/// press only looks sets up.
+/// press only looks up sets.
 public struct ResolvedGroups: Sendable {
     public var groups: [(name: String, members: Set<UInt32>)]
 

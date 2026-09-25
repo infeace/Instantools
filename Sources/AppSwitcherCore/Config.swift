@@ -25,8 +25,11 @@ public struct Config: Sendable, Equatable {
             case "focusedDisplay": self = .focusedDisplay
             case "mouseGroup": self = .mouseGroup
             default:
-                guard rawValue.hasPrefix("group:"), rawValue.count > 6 else { return nil }
-                self = .group(String(rawValue.dropFirst(6)))
+                // By scalar, since a name starting with a combining mark merges with the colon into one Character.
+                let scalars = rawValue.unicodeScalars
+                let prefix = "group:".unicodeScalars
+                guard scalars.starts(with: prefix), scalars.count > prefix.count else { return nil }
+                self = .group(String(scalars.dropFirst(prefix.count)))
             }
         }
     }
@@ -76,11 +79,11 @@ public struct Config: Sendable, Equatable {
 }
 
 /// An exact bundle id, or a prefix when it ends with `*`. Bundle ids are case-insensitive on macOS.
-public struct BundleIdPattern: Sendable {
+private struct BundleIdPattern: Sendable {
     private let text: String
     private let isPrefix: Bool
 
-    public init(_ pattern: String) {
+    init(_ pattern: String) {
         let lowercased = pattern.lowercased()
         isPrefix = lowercased.hasSuffix("*")
         text = isPrefix ? String(lowercased.dropLast()) : lowercased
@@ -94,16 +97,18 @@ public struct BundleIdPattern: Sendable {
 
 /// Built once per config, so a key press only compares lowercased strings.
 public struct ExclusionMatcher: Sendable {
-    private let rules: [(pattern: BundleIdPattern, when: Config.Exclusion.When)]
+    /// An app with windows is excluded only by `always` rules, one without by any rule, so each check is
+    /// one match.
+    private let withWindows: BundleIdMatcher
+    private let withoutWindows: BundleIdMatcher
 
     public init(_ exclusions: [Config.Exclusion]) {
-        rules = exclusions.map { (BundleIdPattern($0.bundleId), $0.when) }
+        withWindows = BundleIdMatcher(exclusions.filter { $0.when == .always }.map(\.bundleId))
+        withoutWindows = BundleIdMatcher(exclusions.map(\.bundleId))
     }
 
     public func isExcluded(bundleId: String?, hasWindows: Bool) -> Bool {
-        guard let bundleId, !rules.isEmpty else { return false }
-        let id = bundleId.lowercased()
-        return rules.contains { $0.pattern.matches(lowercased: id) && ($0.when == .always || !hasWindows) }
+        (hasWindows ? withWindows : withoutWindows).matches(bundleId)
     }
 }
 
@@ -204,6 +209,9 @@ extension Config {
         }
         if let value = root["appKeys"] {
             guard let bindings = value as? [String: Any] else { throw .invalid("appKeys must be an object of keys and bundle ids") }
+            // The file's order is lost in parsing, so sorted order picks between 'F' and 'f', and the
+            // warning names the spelling that won.
+            var spellings: [Character: String] = [:]
             for name in bindings.keys.sorted() {
                 guard name.count == 1, let key = name.lowercased().first, AppKey.isLetterOrDigit(key) else {
                     throw .invalid("appKeys '\(name)' must be a single letter or digit")
@@ -212,10 +220,11 @@ extension Config {
                     throw .invalid("appKeys.\(name) must be a bundle id")
                 }
                 if AppKey.reserved.contains(key) {
-                    warnings.append("appKeys '\(name)' is ignored, since \(name.uppercased()) \(key == "q" ? "quits" : "hides") the selected app")
-                } else if config.appKeys.contains(where: { $0.key == key }) {
-                    warnings.append("appKeys lists '\(key)' twice, the first is used")
+                    warnings.append("appKeys '\(name)' is ignored, since \(name.uppercased()) \(AppKey.reservedAction(key)) the selected app")
+                } else if let used = spellings[key] {
+                    warnings.append("appKeys lists '\(key)' as both '\(used)' and '\(name)', so '\(used)' is used")
                 } else {
+                    spellings[key] = name
                     config.appKeys.append(AppKey(key: key, bundleId: bundleId))
                 }
             }
@@ -397,6 +406,16 @@ extension Config {
     }
 
     public static var defaultFileContents: String { Config().fileContents }
+
+    /// `fileContents`, once they parse back to this config, so Settings never writes a file that does not
+    /// parse or reads back as other settings.
+    public func checkedFileContents() throws(ConfigError) -> String {
+        let contents = fileContents
+        guard try Config.parse(Data(contents.utf8)).config == self else {
+            throw .invalid("the file would read back as different settings")
+        }
+        return contents
+    }
 
     private static func quoted(_ string: String) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: string, options: [.fragmentsAllowed, .withoutEscapingSlashes]),

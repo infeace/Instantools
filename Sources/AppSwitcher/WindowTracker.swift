@@ -14,8 +14,12 @@ final class WindowTracker {
     private var mru = MRUList()
     private var appsByPid: [Int32: RunningApp] = [:]
     private var windows: [WindowRecord] = []
+    /// The windows of listed apps on a connected display. Placed again only when the windows, the apps or
+    /// the displays change, so choosing an app only reorders.
+    private var placedWindows: [WindowRecord] = []
     private var lastDisplayByPid: [Int32: UInt32] = [:]
     private var refreshInFlight = false
+    private var settleRefresh: DispatchWorkItem?
     private var refreshPending = false
     private var appsObservation: NSKeyValueObservation?
 
@@ -27,6 +31,7 @@ final class WindowTracker {
         reloadApps(publishing: false)
         windows = Self.queryWindows() ?? []
         seedOrder()
+        placeWindows()
         publish()
 
         appsObservation = NSWorkspace.shared.observe(\.runningApplications) { [weak self] _, _ in
@@ -72,6 +77,24 @@ final class WindowTracker {
         publish()
     }
 
+    /// Which windows are on a display, and so which apps are windowless, depends on the displays. macOS can
+    /// move the windows of a removed display after this, and window moves are not observed, so they are read
+    /// once more when that has settled.
+    func displaysChanged() {
+        placeWindows()
+        publish()
+        refreshWindows()
+        settleRefresh?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                self?.settleRefresh = nil
+                self?.refreshWindows()
+            }
+        }
+        settleRefresh = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(1), execute: work)
+    }
+
     func refreshWindows() {
         guard !refreshInFlight else {
             refreshPending = true
@@ -85,6 +108,7 @@ final class WindowTracker {
                     self.refreshInFlight = false
                     if let windows, windows != self.windows {
                         self.windows = windows
+                        self.placeWindows()
                         self.publish()
                     }
                     if self.refreshPending {
@@ -104,14 +128,14 @@ final class WindowTracker {
             let pid = app.processIdentifier
             apps[pid] = RunningApp(
                 pid: pid, bundleId: app.bundleIdentifier,
-                name: app.localizedName ?? app.bundleURL?.deletingPathExtension().lastPathComponent ?? "App",
-                isHidden: app.isHidden
+                name: app.localizedName ?? app.bundleURL?.deletingPathExtension().lastPathComponent ?? "App"
             )
             live.append(pid)
         }
         appsByPid = apps
         mru.sync(with: live)
         lastDisplayByPid = lastDisplayByPid.filter { apps[$0.key] != nil }
+        placeWindows()
         if publishing { publish() }
     }
 
@@ -127,25 +151,25 @@ final class WindowTracker {
         mru = MRUList(order.filter { appsByPid[$0] != nil })
     }
 
+    private func placeWindows() {
+        let placed = DisplayMapping.placed(windows.filter { appsByPid[$0.pid] != nil }, on: displays.displays)
+        placedWindows = placed.windows
+        lastDisplayByPid.merge(placed.displayByPid) { _, new in new }
+    }
+
     private func publish() {
-        let visible = windows.filter { appsByPid[$0.pid] != nil }
-        let displayList = displays.displays
-        for window in visible.reversed() {
-            if let display = DisplayMapping.display(for: window.frame, in: displayList) {
-                lastDisplayByPid[window.pid] = display
-            }
-        }
-        let next = Snapshot(apps: mru.order.compactMap { appsByPid[$0] }, windows: visible, lastDisplayByPid: lastDisplayByPid)
+        let next = Snapshot(apps: mru.order.compactMap { appsByPid[$0] }, windows: placedWindows, lastDisplayByPid: lastDisplayByPid)
         guard next != snapshot else { return }
         snapshot = next
         onChange?()
     }
 
-    /// On-screen, normal-level windows front to back (the panel is above normal level). About 1ms. Nil
-    /// while Mission Control or App Exposé is up, since it takes every window off screen without closing any.
+    /// On-screen, normal-level windows front to back (the panel is above normal level). About 1ms. Nil,
+    /// which keeps the last list, when the list cannot be read or while Mission Control or App Exposé is up,
+    /// since it takes every window off screen without closing any.
     nonisolated private static func queryWindows() -> [WindowRecord]? {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-            as? [[String: Any]] else { return [] }
+            as? [[String: Any]] else { return nil }
         if dockCoversADisplay(list) { return nil }
         return list.compactMap { info in
             guard (info[kCGWindowLayer as String] as? Int) == 0,

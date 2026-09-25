@@ -8,26 +8,22 @@ struct PreviewApp: Identifiable {
     let name: String
     let icon: NSImage
     let bundleId: String?
-    let state: String?
 }
 
 struct SwitcherPreview: View {
     let apps: [PreviewApp]
     let iconSize: Double
-    let isActive: Bool
+    /// The status while Cmd+Tab is not active, which also dims the panel.
+    let badge: String?
     let appKeys: [Config.AppKey]
     @Environment(\.colorScheme) private var colorScheme
 
-    // Mirrors SwitcherPanel's private metrics.
-    private let padding: CGFloat = 14
-    private let nameHeight: CGFloat = 26
-
     var body: some View {
         GeometryReader { geometry in
-            let tile = CGFloat(iconSize) + 20
-            let inset = min(10, (tile * 0.1).rounded(.down))
-            let panelWidth = 2 * padding + CGFloat(max(apps.count, 1)) * tile
-            let panelHeight = 2 * padding + tile + nameHeight
+            let tile = PanelStyle.tileSize(iconSize: CGFloat(iconSize))
+            let inset = PanelStyle.tileInset(tile: tile)
+            let panelWidth = 2 * PanelStyle.padding + CGFloat(max(apps.count, 1)) * tile
+            let panelHeight = 2 * PanelStyle.padding + tile + PanelStyle.nameHeight
             let scale = max(0.1, min(1, (geometry.size.width - 40) / panelWidth, (geometry.size.height - 16) / panelHeight))
             ZStack {
                 // No apps while the Cmd+Tab tool is off.
@@ -37,11 +33,11 @@ struct SwitcherPreview: View {
                         .scaleEffect(scale)
                         // scaleEffect does not change layout size, so reserve the scaled size explicitly.
                         .frame(width: panelWidth * scale, height: panelHeight * scale)
-                        .opacity(isActive ? 1 : 0.35)
-                        .saturation(isActive ? 1 : 0)
+                        .opacity(badge == nil ? 1 : 0.35)
+                        .saturation(badge == nil ? 1 : 0)
                 }
-                if !isActive {
-                    Label("Paused", systemImage: "pause.fill")
+                if let badge {
+                    Text(badge)
                         .font(.callout.weight(.semibold))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
@@ -65,7 +61,6 @@ struct SwitcherPreview: View {
                         .resizable()
                         .interpolation(.high)
                         .frame(width: icon, height: icon)
-                        .opacity(app.state == nil ? 1 : Double(PanelStyle.dimmedOpacity))
                         .overlay(alignment: .bottomTrailing) {
                             if let key = keys.key(for: app.bundleId), let image = PanelStyle.badgeImage(key) {
                                 Image(decorative: image, scale: 1)
@@ -77,38 +72,44 @@ struct SwitcherPreview: View {
                         .padding(inset)
                         .background {
                             if index == selected {
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(dark ? Color.white.opacity(0.16) : Color.black.opacity(0.1))
+                                RoundedRectangle(cornerRadius: PanelStyle.highlightCornerRadius, style: .continuous)
+                                    .fill(Color(PanelStyle.highlight(dark: dark)))
                             }
                         }
                 }
             }
             let rowWidth = CGFloat(apps.count) * tile
-            let app = apps.indices.contains(selected) ? apps[selected] : nil
-            let name = PanelStyle.nameText(name: app?.name ?? "", state: app?.state, dark: dark)
+            let app = apps[selected]
+            let name = PanelStyle.nameText(name: app.name, dark: dark)
             let label = NameLabel.span(
-                textWidth: PanelStyle.width(of: name), maxWidth: max(tile * 2.5, 160),
+                textWidth: PanelStyle.width(of: name), maxWidth: PanelStyle.nameMaxWidth(tile: tile),
                 centeredOn: (CGFloat(selected) + 0.5) * tile, within: 0...rowWidth
             )
-            (Text(app?.name ?? "").foregroundStyle(dark ? Color.white : .black)
-                + Text(app?.state.map { " · \($0)" } ?? "").foregroundStyle(Color(white: dark ? 1 : 0, opacity: 0.5)))
+            Text(app.name)
+                .foregroundStyle(dark ? Color.white : .black)
                 .font(Font(PanelStyle.nameFont))
                 .lineLimit(1)
-                .frame(width: label.width, height: nameHeight - 6)
+                .frame(width: label.width, height: PanelStyle.nameLabelHeight)
                 .offset(x: label.x + label.width / 2 - rowWidth / 2)
                 .frame(width: rowWidth)
-                .padding(.top, 3)
+                .padding(.top, PanelStyle.nameGap)
         }
-        .padding(padding)
+        .padding(PanelStyle.padding)
         .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(dark ? Color(white: 0.14, opacity: 0.9) : Color(white: 0.96, opacity: 0.9))
+            RoundedRectangle(cornerRadius: PanelStyle.cornerRadius, style: .continuous)
+                .fill(Color(PanelStyle.background(dark: dark)))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(dark ? Color.white.opacity(0.12) : Color.black.opacity(0.1), lineWidth: 1)
+            RoundedRectangle(cornerRadius: PanelStyle.cornerRadius, style: .continuous)
+                .strokeBorder(Color(PanelStyle.border(dark: dark)), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.3), radius: 18, y: 8)
+    }
+}
+
+private extension Color {
+    init(_ shade: PanelStyle.Shade) {
+        self.init(white: shade.white, opacity: shade.alpha)
     }
 }
 

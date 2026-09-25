@@ -52,15 +52,17 @@ final class ToolSupervisor {
         for runner in runners.values { runner.request(.status) }
     }
 
-    /// Blocks for up to the stop timeout, for quitting and termination signals.
+    /// Blocks for up to the stop timeout, for quitting and termination signals. While Cmd+Tab is on, native
+    /// Cmd+Tab is restored whatever happened: a Cmd+Tab tool killed just before is not waited for here, and
+    /// its exit handler never runs once the host exits. While it is off, the setting may belong to another
+    /// switcher.
     func stopAllAndWait() {
-        let stopping = runners.values.compactMap { runner in runner.beginStop().map { (runner, $0) } }
+        let stopping = runners.values.compactMap { $0.beginStop() }
         let deadline = DispatchTime.now() + ToolLaunch.stopTimeout
-        for (runner, child) in stopping {
-            let finished = child.exited.wait(timeout: deadline) == .success
-            if !finished { kill(child.process.processIdentifier, SIGKILL) }
-            if !finished || child.process.terminationReason != .exit { runner.afterUncleanExit?() }
+        for child in stopping where child.exited.wait(timeout: deadline) != .success {
+            kill(child.process.processIdentifier, SIGKILL)
         }
+        if HostPreferences.isEnabled(.appSwitcher) { NativeSwitcher.restore() }
     }
 }
 
@@ -80,7 +82,6 @@ final class ToolRunner {
     private var wanted = false
     private var backoff = RestartBackoff()
     private var restart: DispatchWorkItem?
-    private var nextRequestId = 1
 
     /// One launched copy. The pipe reader and the exit handler run on Foundation's own queues and touch only
     /// `lines` and `exited`, and `writes` owns stdin; everything else is used on the main thread.
@@ -113,9 +114,6 @@ final class ToolRunner {
 
     /// Turning a tool off and on again starts its restart budget over, like trying again.
     func stop() {
-        wanted = false
-        restart?.cancel()
-        restart = nil
         backoff.reset()
         if child == nil { state = .off }
         guard let child = beginStop() else { return }
@@ -145,9 +143,8 @@ final class ToolRunner {
 
     func request(_ kind: HostRequest.Kind) {
         guard let child, child.isReady, !child.stopRequested,
-              let line = MessageCoding.line(HostRequest(id: nextRequestId, request: kind))
+              let line = MessageCoding.line(HostRequest(request: kind))
         else { return }
-        nextRequestId += 1
         // A tool that stops reading fills the pipe, and a blocked write must not freeze the menu bar.
         child.writes.async { PipeIO.write(line, to: child.input.fileDescriptor) }
     }
@@ -218,7 +215,7 @@ final class ToolRunner {
                 // So Settings opens with data, even though it asks for fresh status only while visible.
                 request(.status)
             }
-            if message.appSwitcher != nil || message.layoutSwitcher != nil, message != latest {
+            if message.event == nil, message != latest {
                 latest = message
                 onChange?()
             }

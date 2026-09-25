@@ -1,6 +1,5 @@
 import AppSwitcherKit
 import InstantoolsCore
-import InstantoolsKit
 import SwiftUI
 
 struct GeneralPane: View {
@@ -18,8 +17,7 @@ struct GeneralPane: View {
 
     private var tools: some View {
         SettingsCard(title: "Tools") {
-            ForEach(Array(ToolId.allCases.enumerated()), id: \.element) { index, tool in
-                if index > 0 { RowDivider(indented: true) }
+            DividedRows(ToolId.allCases, id: \.self) { tool in
                 ToolRow(tool: tool, model: model)
             }
         }
@@ -30,28 +28,31 @@ struct GeneralPane: View {
             title: "Permissions",
             footer: "Every tool runs as part of Instantools, so macOS asks once and lists only Instantools in Privacy & Security."
         ) {
-            PermissionRow(
-                symbol: "hand.raised.fill",
-                colors: [.orange, Color(red: 0.93, green: 0.42, blue: 0.1)],
-                title: "Accessibility",
-                subtitle: model.isEnabled(.appSwitcher)
-                    ? "Cmd+Tab needs it for the keys inside the switcher and to bring the right window forward. It covers Language too."
-                    : "Lets Language see Control and Command, in place of Input Monitoring.",
-                granted: model.accessibilityGranted,
-                allow: Permissions.requestAccessibilityInSettings
-            )
-            if model.isEnabled(.layoutSwitcher), !model.accessibilityGranted {
+            PermissionRow(permission: .accessibility, subtitle: accessibilitySubtitle, granted: model.accessibilityGranted)
+            if model.needsInputMonitoring {
                 RowDivider(indented: true)
-                PermissionRow(
-                    symbol: "keyboard.fill",
-                    colors: SettingsPane.language.colors,
-                    title: "Input Monitoring",
-                    subtitle: "Lets Language see Control and Command. Not needed once Accessibility is allowed.",
-                    granted: model.inputMonitoringGranted,
-                    allow: Permissions.requestInputMonitoringInSettings
-                )
+                PermissionRow(permission: .inputMonitoring, subtitle: inputMonitoringSubtitle, granted: model.inputMonitoringGranted)
             }
         }
+    }
+
+    private var accessibilitySubtitle: String {
+        let switchedOff = model.inputMonitoringSwitchedOff
+        if model.isEnabled(.appSwitcher) {
+            let covers = switchedOff ? "" : " It covers Language too."
+            return "Cmd+Tab needs it for the keys inside the switcher and to bring the right window forward.\(covers)"
+        }
+        return switchedOff
+            ? "Not enough for Language while Input Monitoring is switched off."
+            : "Lets Language see Control and Command, in place of Input Monitoring."
+    }
+
+    private var inputMonitoringSubtitle: String {
+        guard model.inputMonitoringSwitchedOff else {
+            return "Lets Language see Control and Command. Allowing Accessibility covers it too."
+        }
+        let tools = ToolId.allCases.filter(model.isEnabled).map(\.name).formatted(.list(type: .and))
+        return "Switched off for Instantools, so \(tools) cannot see keys until it is back on."
     }
 
     private var startup: some View {
@@ -77,7 +78,7 @@ struct GeneralPane: View {
 
     private var configuration: some View {
         SettingsCard(title: "Configuration") {
-            SettingsRow(title: "Settings folder", subtitle: "~/.config/instantools, one file per tool, kept in sync with this window.") {
+            SettingsRow(title: "Settings folder", subtitle: "\(ConfigStore.directory.abbreviatedPath), kept in sync with this window.") {
                 Button("Show in Finder") { ConfigStore.revealDirectory() }
                     .glassButton()
             }
@@ -92,10 +93,10 @@ private struct ToolRow: View {
     var body: some View {
         let state = model.state(of: tool)
         SettingsRow(title: tool.name, subtitle: tool.summary) {
-            IconTile(symbol: tool.pane.symbol, colors: tool.pane.colors, size: 30)
+            ToolIcon(tool: tool)
         } trailing: {
             HStack(spacing: 12) {
-                ToolStatusLabel(state: state, isEnabled: model.isEnabled(tool))
+                ToolStatusLabel(tool: tool, model: model)
                 Toggle("Use \(tool.name)", isOn: model.enabled(tool))
                     .toggleStyle(.switch)
                     .labelsHidden()
@@ -117,24 +118,47 @@ private struct ToolRow: View {
     }
 }
 
-private struct PermissionRow: View {
-    let symbol: String
-    let colors: [Color]
-    let title: String
-    let subtitle: String
-    let granted: Bool
-    let allow: () -> Void
+private struct ToolStatusLabel: View {
+    let tool: ToolId
+    let model: SettingsModel
 
     var body: some View {
-        SettingsRow(title: title, subtitle: subtitle) {
-            IconTile(symbol: symbol, colors: colors, size: 30)
+        let (text, color) = status
+        HStack(spacing: 6) {
+            StatusDot(color: color)
+                .scaleEffect(0.8)
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .fixedSize()
+    }
+
+    private var status: (text: String, color: Color) {
+        switch model.state(of: tool) {
+        case .running where model.isActive(tool): ("Running", .green)
+        case .running: (tool.inactiveStatus, .orange)
+        case .failed: ("Failed", .red)
+        case .starting, .off: model.isEnabled(tool) ? ("Starting", .orange) : ("Off", Color(white: 0.6))
+        }
+    }
+}
+
+private struct PermissionRow: View {
+    let permission: Permission
+    let subtitle: String
+    let granted: Bool
+
+    var body: some View {
+        SettingsRow(title: permission.title, subtitle: subtitle) {
+            IconTile(permission.tile, size: 30)
         } trailing: {
             if granted {
                 Label("Allowed", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                     .fixedSize()
             } else {
-                Button("Allow…", action: allow)
+                Button("Allow…", action: permission.request)
                     .glassButton(prominent: true)
             }
         }

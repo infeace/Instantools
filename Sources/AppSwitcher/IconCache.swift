@@ -1,4 +1,5 @@
 import AppKit
+import AppSwitcherKit
 import UniformTypeIdentifiers
 
 @MainActor
@@ -53,16 +54,8 @@ final class IconCache {
     }
 
     private func render(_ image: NSImage) -> CGImage? {
-        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
-              let context = CGContext(
-                  data: nil, width: pixels, height: pixels, bitsPerComponent: 8, bytesPerRow: 0, space: space,
-                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-              )
-        else { return nil }
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
-        image.draw(in: NSRect(x: 0, y: 0, width: pixels, height: pixels))
-        NSGraphicsContext.restoreGraphicsState()
-        return context.makeImage()
+        PanelStyle.renderImage(pixels: pixels) {
+            image.draw(in: NSRect(x: 0, y: 0, width: pixels, height: pixels))
+        }
     }
 }

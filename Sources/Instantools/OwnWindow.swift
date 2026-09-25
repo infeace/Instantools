@@ -5,11 +5,11 @@ import SkyLightShim
 /// so Instantools also makes itself the front process directly, as the switcher does for other apps.
 @MainActor
 enum OwnWindow {
-    static func bringForward(_ window: NSWindow?) {
-        window?.makeKeyAndOrderFront(nil)
-        window?.orderFrontRegardless()
+    static func bringForward(_ window: NSWindow) {
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
         NSApp.activate()
-        SkyLight.focus(pid: ownPid, windowId: CGWindowID(window?.windowNumber ?? 0))
+        SkyLight.focus(pid: ownPid, windowId: CGWindowID(window.windowNumber))
     }
 }
 

@@ -32,9 +32,15 @@ struct AppKeysTests {
         #expect(parsed.config.appKeys == [.init(key: "f", bundleId: "com.c")])
         #expect(parsed.warnings == [
             "appKeys 'H' is ignored, since H hides the selected app",
-            "appKeys lists 'f' twice, the first is used",
+            "appKeys lists 'f' as both 'F' and 'f', so 'F' is used",
             "appKeys 'q' is ignored, since Q quits the selected app",
         ])
+    }
+
+    @Test func caseDuplicatesDoNotDependOnFileOrder() throws {
+        let parsed = try parse(#"{ appKeys: { f: "com.d", F: "com.c" } }"#)
+        #expect(parsed.config.appKeys == [.init(key: "f", bundleId: "com.c")])
+        #expect(parsed.warnings == ["appKeys lists 'f' as both 'F' and 'f', so 'F' is used"])
     }
 
     @Test func invalidBindingsAreErrors() {
@@ -82,7 +88,7 @@ struct AppKeysTests {
     @Test func tilesCarryTheirKey() {
         let snapshot = Snapshot(apps: [RunningApp(pid: 1, bundleId: "com.apple.finder", name: "Finder"), RunningApp(pid: 2, bundleId: "com.b", name: "B")])
         let entries = SwitcherFilter.entries(
-            for: snapshot, config: Config(), exclusions: ExclusionMatcher([]),
+            for: snapshot, windowlessApps: .show, exclusions: ExclusionMatcher([]),
             appKeys: AppKeyMap([.init(key: "f", bundleId: "com.apple.finder")]), displays: [], targets: nil
         )
         #expect(entries.map(\.key) == ["f", nil])

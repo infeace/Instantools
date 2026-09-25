@@ -1,6 +1,5 @@
 import AppSwitcherCore
-import InstantoolsCore
-import InstantoolsKit
+import AppSwitcherKit
 import SwiftUI
 
 struct SwitcherPane: View {
@@ -8,25 +7,32 @@ struct SwitcherPane: View {
     @State private var confirmingReset = false
 
     var body: some View {
-        PaneScroll { compact in
+        let status = status
+        PaneScroll { _ in
             PaneHeader(pane: .switcher, subtitle: "How Instantools takes over Cmd+Tab and how the switcher looks.")
             FileProblemBanner(configStore: model.configStore)
             Hero {
                 SwitcherPreview(
-                    apps: model.previewApps, iconSize: model.configStore.config.iconSize, isActive: model.switcherActive,
-                    appKeys: model.configStore.config.appKeys
+                    apps: model.previewApps, iconSize: model.configStore.config.iconSize,
+                    badge: model.isActive(.appSwitcher) ? nil : status.title, appKeys: model.configStore.config.appKeys
                 )
             } bar: {
-                statusBar(compact: compact)
+                ToolStatusBar(model: model, tool: .appSwitcher, status: status, toggleLabel: "Use Instantools for Cmd+Tab")
             }
             if model.isEnabled(.appSwitcher), !model.accessibilityGranted {
                 Callout(
-                    symbol: "hand.raised.fill",
-                    colors: [.orange, Color(red: 0.93, green: 0.42, blue: 0.1)],
+                    permission: .accessibility,
                     title: "Allow Accessibility access",
-                    message: "Cmd+Tab already works. With access, the keys inside the switcher work too, and the right window of an app comes forward.",
-                    action: "Allow…",
-                    perform: Permissions.requestAccessibilityInSettings
+                    message: model.isActive(.appSwitcher)
+                        ? "Cmd+Tab already works. With access, the keys inside the switcher work too, and the right window of an app comes forward."
+                        : "With access, the keys inside the switcher work, and the right window of an app comes forward."
+                )
+            }
+            if model.isEnabled(.appSwitcher), model.inputMonitoringSwitchedOff {
+                Callout(
+                    permission: .inputMonitoring,
+                    title: "Input Monitoring is switched off",
+                    message: "The keys inside the switcher do nothing until it is back on for Instantools."
                 )
             }
             SpeedCard(model: model)
@@ -36,26 +42,9 @@ struct SwitcherPane: View {
         }
     }
 
-    private func statusBar(compact: Bool) -> some View {
-        let status = status
-        return StatusBar(title: status.title, subtitle: compact ? nil : status.subtitle) {
-            StatusDot(color: status.color)
-        } trailing: {
-            HStack(spacing: 10) {
-                if case .failed = model.state(of: .appSwitcher) {
-                    Button("Try Again") { model.retry(.appSwitcher) }
-                        .glassButton()
-                }
-                Toggle("Use Instantools for Cmd+Tab", isOn: model.enabled(.appSwitcher))
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-            }
-        }
-    }
-
     private var status: (title: String, subtitle: String, color: Color) {
         guard model.isEnabled(.appSwitcher) else {
-            return ("Paused", "Cmd+Tab opens the macOS switcher for now.", .orange)
+            return ("Off", "Cmd+Tab opens the macOS switcher for now.", .orange)
         }
         switch model.state(of: .appSwitcher) {
         case .failed(let reason):
@@ -94,19 +83,22 @@ struct SwitcherPane: View {
 
     private var configuration: some View {
         SettingsCard(title: "Configuration") {
-            SettingsRow(title: "Settings file", subtitle: "~/.config/instantools/cmd-tab.json5, kept in sync with this window.") {
+            SettingsRow(title: "Settings file", subtitle: "\(ConfigStore.fileURL.abbreviatedPath), kept in sync with this window.") {
                 HStack(spacing: 8) {
                     Button("Show in Finder") { model.configStore.revealInFinder() }
                     Button("Open") { model.configStore.openInEditor() }
                 }
                 .glassButton()
             }
-            ForEach(model.configStore.warnings, id: \.self) { warning in
+            ForEach(Array(model.configStore.warnings.enumerated()), id: \.offset) { _, warning in
                 RowDivider()
                 MessageRow(text: warning, isError: false)
             }
             RowDivider()
-            SettingsRow(title: "Reset Cmd+Tab settings", subtitle: "Back to defaults, including app keys, excluded apps and monitor groups.") {
+            SettingsRow(
+                title: "Reset Cmd+Tab settings",
+                subtitle: "Back to defaults, including app keys, excluded apps, apps that keep Cmd+Tab and monitor groups."
+            ) {
                 Button("Reset…", role: .destructive) { confirmingReset = true }
                     .glassButton()
             }
@@ -114,7 +106,7 @@ struct SwitcherPane: View {
         .confirmationDialog("Reset Cmd+Tab settings?", isPresented: $confirmingReset) {
             Button("Reset Cmd+Tab Settings", role: .destructive) { model.configStore.resetToDefaults() }
         } message: {
-            Text("App keys, excluded apps and monitor groups are removed too. This cannot be undone.")
+            Text("App keys, excluded apps, apps that keep Cmd+Tab and monitor groups are removed too. This cannot be undone.")
         }
     }
 

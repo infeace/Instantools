@@ -46,7 +46,7 @@ final class SettingsModel {
     private(set) var latency = LatencyStats()
     /// One refresh of the display the switcher appears on.
     private(set) var frameMilliseconds = 1000.0 / 60
-    private(set) var displayName = "this display"
+    private(set) var displayName = "this monitor"
     private(set) var displays: [Display] = []
     private(set) var mouseDisplay: UInt32?
     private(set) var focusedDisplay: UInt32?
@@ -121,10 +121,7 @@ final class SettingsModel {
             previewEntries = recent
             previewApps = recent.compactMap { entry in
                 guard let app = NSRunningApplication(processIdentifier: entry.pid), let icon = app.icon else { return nil }
-                return PreviewApp(
-                    id: entry.pid, name: entry.name, icon: icon, bundleId: app.bundleIdentifier,
-                    state: SwitcherEntry.state(isHidden: entry.isHidden, hasWindow: entry.hasWindow)
-                )
+                return PreviewApp(id: entry.pid, name: entry.name, icon: icon, bundleId: app.bundleIdentifier)
             }
         }
         let screen = NSScreen.screens.first { $0.displayId == switcherDisplay } ?? NSScreen.main
@@ -164,26 +161,34 @@ final class SettingsModel {
     func enabled(_ tool: ToolId) -> Binding<Bool> {
         Binding(
             get: { self.enabledTools.contains(tool) },
-            set: { enabled in
-                self.actions.setEnabled(tool, enabled)
-                self.refresh()
-            }
+            set: { enabled in self.actions.setEnabled(tool, enabled) }
         )
     }
 
     func retry(_ tool: ToolId) {
         actions.retry(tool)
-        refresh()
     }
 
-    /// Cmd+Tab goes to Instantools right now.
-    var switcherActive: Bool {
-        state(of: .appSwitcher) == .running && handlesCmdTab != false
+    /// Doing its job right now. The Language tool leaves the Input Monitoring check out of its status,
+    /// since the check takes about 10 ms on its run loop, so it is added here.
+    func isActive(_ tool: ToolId) -> Bool {
+        guard state(of: tool) == .running else { return false }
+        return switch tool {
+        case .appSwitcher: handlesCmdTab != false
+        case .layoutSwitcher: layoutTapRunning != false && inputMonitoringGranted
+        }
     }
 
-    /// Accessibility lets Language listen too, so Input Monitoring is only missing without it.
+    /// Only then does the check fail with Accessibility on. Without Accessibility it cannot be told from
+    /// never asked.
+    var inputMonitoringSwitchedOff: Bool {
+        accessibilityGranted && !inputMonitoringGranted
+    }
+
+    /// The check passes with Accessibility alone, unless Input Monitoring is switched off. Cmd+Tab needs it
+    /// only for its taps, which also need Accessibility.
     var needsInputMonitoring: Bool {
-        isEnabled(.layoutSwitcher) && !accessibilityGranted && !inputMonitoringGranted
+        !inputMonitoringGranted && (isEnabled(.layoutSwitcher) || (isEnabled(.appSwitcher) && accessibilityGranted))
     }
 
     var startAtLogin: Binding<Bool> {
@@ -216,8 +221,7 @@ final class SettingsModel {
     }
 
     var runningAppsToExclude: [AppChoice] {
-        let excluded = Set(configStore.config.exclude.map { $0.bundleId.lowercased() })
-        return runningApps.filter { !excluded.contains($0.bundleId.lowercased()) }
+        runningApps.filter { !configStore.config.excludes($0.bundleId) }
     }
 
     private static func runningApps() -> [AppChoice] {
@@ -234,8 +238,7 @@ final class SettingsModel {
     }
 
     var altTabRulesToImport: [Config.Exclusion] {
-        let excluded = Set(configStore.config.exclude.map { $0.bundleId.lowercased() })
-        return altTabRules.filter { !excluded.contains($0.bundleId.lowercased()) }
+        altTabRules.filter { !configStore.config.excludes($0.bundleId) }
     }
 
     func exclude(_ bundleId: String) {
@@ -264,25 +267,27 @@ final class SettingsModel {
     }
 
     func chooseAppsToExclude() {
-        let rules = chooseApps(title: "Choose Apps to Exclude", prompt: "Exclude").map { Config.Exclusion(bundleId: $0) }
+        let rules = chooseApps(title: "Choose apps to exclude", prompt: "Exclude").map { Config.Exclusion(bundleId: $0) }
         configStore.update { $0.addExclusions(rules) }
     }
 
     func chooseAppsToPassThrough() {
-        addPassThrough(chooseApps(title: "Choose Apps That Keep Cmd+Tab", prompt: "Add"))
+        addPassThrough(chooseApps(title: "Choose apps that keep Cmd+Tab", prompt: "Add"))
     }
 
     /// Bundle ids of apps picked from Applications.
     func chooseApps(title: String, prompt: String, multiple: Bool = true) -> [String] {
         let panel = NSOpenPanel()
+        // Open panels no longer show their title.
         panel.title = title
+        panel.message = title
         panel.prompt = prompt
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
         panel.allowedContentTypes = [.applicationBundle]
         panel.allowsMultipleSelection = multiple
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK else { return [] }
-        return panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }
+        return panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }.filter { !$0.isEmpty }
     }
 
     func bindAppKey(_ key: Character, to bundleId: String, replacing current: Character? = nil) {
@@ -297,9 +302,8 @@ final class SettingsModel {
 
     var groups: [DisplayGroup] { configStore.config.displayGroups }
 
-    func color(ofGroup name: String) -> Color {
-        let index = groups.firstIndex { $0.name == name } ?? 0
-        return Self.groupColors[index % Self.groupColors.count]
+    func color(ofGroup name: String) -> Color? {
+        groups.firstIndex { $0.name == name }.map { Self.groupColors[$0 % Self.groupColors.count] }
     }
 
     /// Resolved once per change of groups or displays rather than on every render.
@@ -313,7 +317,7 @@ final class SettingsModel {
     }
 
     func groupColors(of display: Display) -> [Color] {
-        resolvedGroups.groups.filter { $0.members.contains(display.id) }.map { color(ofGroup: $0.name) }
+        resolvedGroups.groups.filter { $0.members.contains(display.id) }.compactMap { color(ofGroup: $0.name) }
     }
 
     func members(of group: DisplayGroup) -> Set<UInt32> {
@@ -334,8 +338,15 @@ final class SettingsModel {
         return options
     }
 
-    func saveGroup(_ group: DisplayGroup, replacing originalName: String?) {
+    /// False, changing nothing, when another group has the name. The editor checked the names when it
+    /// opened, and the file can change while it is open.
+    func saveGroup(_ group: DisplayGroup, replacing originalName: String?) -> Bool {
+        var nameTaken = false
         configStore.update { config in
+            guard !config.displayGroups.contains(where: { $0.name == group.name && $0.name != originalName }) else {
+                nameTaken = true
+                return
+            }
             if let originalName, let index = config.displayGroups.firstIndex(where: { $0.name == originalName }) {
                 config.displayGroups[index] = group
                 if config.scope == .group(originalName) { config.scope = .group(group.name) }
@@ -343,6 +354,7 @@ final class SettingsModel {
                 config.displayGroups.append(group)
             }
         }
+        return !nameTaken
     }
 
     func deleteGroup(_ name: String) {

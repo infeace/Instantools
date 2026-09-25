@@ -1,5 +1,5 @@
-import Dispatch
 import Darwin
+import InstantoolsKit
 import SkyLightShim
 
 /// Native Cmd+Tab stays off only while the Cmd+Tab tool handles it. The setting outlives the process, so the
@@ -22,21 +22,11 @@ public enum NativeSwitcher {
         return tab && shiftTab
     }
 
-    nonisolated(unsafe) private static var signalSources: [DispatchSourceSignal] = []
-
-    public static func installExitHandlers() {
+    @MainActor public static func installExitHandlers() {
         atexit { NativeSwitcher.restore() }
         // A stopped process would keep the hotkeys registered and Cmd+Tab would do nothing.
         signal(SIGTSTP, SIG_IGN)
-
-        for sig in [SIGTERM, SIGINT, SIGHUP, SIGQUIT] {
-            // Ignored first, so the default action does not kill the process before the source runs.
-            signal(sig, SIG_IGN)
-            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
-            source.setEventHandler { exit(0) }
-            source.resume()
-            signalSources.append(source)
-        }
+        TerminationSignals.handle { exit(0) }
 
         // Crash handlers restore, then re-raise so the crash is reported. The alternate stack lets them run
         // after a stack overflow on the main thread; sigaltstack is per thread.

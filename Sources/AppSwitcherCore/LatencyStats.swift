@@ -1,5 +1,5 @@
 public struct LatencyStats: Sendable, Equatable {
-    public let capacity: Int
+    private let capacity: Int
     private var samples: [UInt64] = []
     private var nextIndex = 0
 

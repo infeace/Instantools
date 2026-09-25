@@ -1,5 +1,4 @@
 import AppKit
-import AppSwitcherCore
 import AppSwitcherKit
 import InstantoolsCore
 import InstantoolsKit
@@ -10,7 +9,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let displays = Displays()
     private let supervisor = ToolSupervisor()
     private var statusItem: NSStatusItem?
-    private var signalSources: [DispatchSourceSignal] = []
     private lazy var settings = SettingsWindowController(
         makeModel: { [unowned self] in
             SettingsModel(configStore: configStore, actions: .init(
@@ -64,23 +62,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return false
     }
 
-    /// Tools restore what they changed on their own way out, so the host only asks them to stop and waits.
+    /// Tools restore what they changed on their own way out, so the host asks them to stop and waits.
     private func installSignalHandlers() {
-        for sig in [SIGTERM, SIGINT, SIGHUP, SIGQUIT] {
-            // Ignored first, so the default action does not kill the process before the source runs.
-            signal(sig, SIG_IGN)
-            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
-            source.setEventHandler { [weak self] in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.configStore.flush()
-                    if self.settings.isOpen { Handoff.markSettingsOpen() }
-                    self.supervisor.stopAllAndWait()
-                }
-                exit(0)
+        TerminationSignals.handle { [weak self] in
+            if let self {
+                configStore.flush()
+                if settings.isOpen { Handoff.markSettingsOpen() }
+                supervisor.stopAllAndWait()
             }
-            source.resume()
-            signalSources.append(source)
+            exit(0)
         }
     }
 
@@ -109,10 +99,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(toolItem(tool))
         }
         let running = { (tool: ToolId) in [.running, .starting].contains(self.supervisor.state(tool)) }
-        if running(.appSwitcher), !Permissions.accessibility {
+        let accessibility = Permissions.accessibility
+        if running(.appSwitcher), !accessibility {
             menu.addItem(item("Grant Accessibility…", #selector(openAccessibility), target: self))
         }
-        if running(.layoutSwitcher), !Permissions.accessibility, !Permissions.inputMonitoring {
+        // Cmd+Tab's taps need it too, but without Accessibility they are off anyway.
+        if running(.layoutSwitcher) || (running(.appSwitcher) && accessibility), !Permissions.inputMonitoring {
             menu.addItem(item("Grant Input Monitoring…", #selector(openInputMonitoring), target: self))
         }
         if let error = configStore.error {
@@ -129,7 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let title = switch supervisor.state(tool) {
         case .failed: "\(tool.name): Failed, click to retry"
         case .starting where enabled: "\(tool.name): Starting…"
-        default: enabled ? tool.name : "\(tool.name): Paused"
+        default: enabled ? tool.name : "\(tool.name): Off"
         }
         let item = item(title, #selector(toggleTool(_:)), target: self)
         item.representedObject = tool.rawValue

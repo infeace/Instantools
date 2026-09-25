@@ -20,8 +20,7 @@ struct ExclusionsPane: View {
                     footer: "\"When it has no windows\" leaves an app out only while none of its windows are open, which suits apps like Finder."
                 ) {
                     if rules.isEmpty { EmptyRow(text: "No excluded apps yet.") }
-                    ForEach(Array(rules.enumerated()), id: \.element.bundleId) { index, rule in
-                        if index > 0 { RowDivider(indented: true) }
+                    DividedRows(rules, id: \.bundleId) { rule in
                         ExclusionRow(
                             rule: rule,
                             info: model.apps.info(for: rule.bundleId),
@@ -38,13 +37,7 @@ struct ExclusionsPane: View {
     }
 
     @ViewBuilder private var addButtons: some View {
-        Menu("Add Running App") {
-            ForEach(model.runningAppsToExclude, id: \.bundleId) { app in
-                Button { model.exclude(app.bundleId) } label: { AppChoiceLabel(app: app) }
-            }
-        }
-        .fixedSize()
-        .disabled(model.runningAppsToExclude.isEmpty)
+        RunningAppMenu(apps: model.runningAppsToExclude, add: model.exclude)
         Button("Choose Apps…") { model.chooseAppsToExclude() }
         Button("Add by ID…") { addingBundleId = true }
             .popover(isPresented: $addingBundleId, arrowEdge: .bottom) { bundleIdPopover }
@@ -56,23 +49,16 @@ struct ExclusionsPane: View {
             footer: "While one of these apps is in front, Cmd+Tab goes to it instead of Instantools. For virtual machines, remote desktops and games. Click another app to leave it."
         ) {
             if passThrough.isEmpty { EmptyRow(text: "None yet.") }
-            ForEach(Array(passThrough.enumerated()), id: \.element) { index, bundleId in
-                if index > 0 { RowDivider(indented: true) }
+            DividedRows(passThrough, id: \.self) { bundleId in
                 let info = model.apps.info(for: bundleId)
-                SettingsRow(title: info.name, subtitle: info.isMissing ? "\(bundleId), not installed" : bundleId) {
+                SettingsRow(title: info.name, subtitle: info.subtitle(bundleId: bundleId)) {
                     AppIcon(info: info, isPattern: bundleId.hasSuffix("*"))
                 } trailing: {
                     RemoveButton(help: "Take Cmd+Tab back from \(info.name)") { model.removePassThrough(bundleId) }
                 }
             }
             CardActions {
-                Menu("Add Running App") {
-                    ForEach(model.runningAppsToPassThrough, id: \.bundleId) { app in
-                        Button { model.addPassThrough([app.bundleId]) } label: { AppChoiceLabel(app: app) }
-                    }
-                }
-                .fixedSize()
-                .disabled(model.runningAppsToPassThrough.isEmpty)
+                RunningAppMenu(apps: model.runningAppsToPassThrough) { model.addPassThrough([$0]) }
                 Button("Choose Apps…") { model.chooseAppsToPassThrough() }
             }
         }
@@ -85,7 +71,7 @@ struct ExclusionsPane: View {
         }
         return Callout(
             symbol: "square.and.arrow.down.fill",
-            colors: SettingsPane.monitors.colors,
+            colors: Tile.monitors.colors,
             title: "Import from AltTab",
             message: "AltTab hides \(names.formatted(.list(type: .and))). Your current rules stay as they are.",
             action: "Import",
@@ -142,7 +128,7 @@ private struct ExclusionRow: View {
     let remove: () -> Void
 
     var body: some View {
-        SettingsRow(title: info.name, subtitle: info.isMissing ? "\(rule.bundleId), not installed" : rule.bundleId) {
+        SettingsRow(title: info.name, subtitle: info.subtitle(bundleId: rule.bundleId)) {
             AppIcon(info: info, isPattern: rule.bundleId.hasSuffix("*"))
         } trailing: {
             HStack(spacing: 8) {
