@@ -4,6 +4,8 @@ import Foundation
 public struct HostRequest: Codable, Equatable, Sendable {
     public enum Kind: String, Codable, Sendable {
         case status
+        /// Answered with a pong from the tool's main thread, so a tool whose main thread hangs stops answering.
+        case ping
     }
 
     public var request: Kind
@@ -15,6 +17,7 @@ public struct HostRequest: Codable, Equatable, Sendable {
 
 public enum ToolEvent: String, Codable, Sendable {
     case ready
+    case pong
 }
 
 /// Tool to host, one JSON object per line on the tool's stdout: an event, or a reply with the tool's status.

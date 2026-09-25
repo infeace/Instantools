@@ -23,13 +23,22 @@ final class ToolSupervisor {
     private let marker: MarkerStore
     var onChange: (() -> Void)?
 
-    /// `helpers` and `marker` are for tests.
-    init(helpers: URL = Bundle.main.bundleURL.appending(path: "Contents/Helpers"), marker: MarkerStore = .hostPreferences) {
+    /// `helpers`, `marker` and `checkInterval` are for tests.
+    init(
+        helpers: URL = Bundle.main.bundleURL.appending(path: "Contents/Helpers"),
+        marker: MarkerStore = .hostPreferences,
+        checkInterval: Double = Liveness.interval
+    ) {
         self.marker = marker
         for tool in ToolId.allCases {
-            let runner = ToolRunner(tool: tool, helpers: helpers)
+            let runner = ToolRunner(tool: tool, helpers: helpers, checkInterval: checkInterval)
             runner.onChange = { [weak self] in self?.onChange?() }
             runners[tool] = runner
+        }
+        for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.runners.values.forEach { $0.woke() } }
+            }
         }
         let switcher = runners[.appSwitcher]
         switcher?.willLaunch = { [weak self] in self?.editMarker { $0.startingSwitcher() } }
@@ -124,6 +133,8 @@ final class ToolRunner {
     private var wanted = false
     private var backoff = RestartBackoff()
     private var restart: DispatchWorkItem?
+    private let checkInterval: Double
+    private var checks: DispatchSourceTimer?
 
     /// One launched copy. The pipe reader and the exit handler run on Foundation's own queues and touch only
     /// `lines` and `exited`, and `writes` owns stdin; everything else is used on the main thread.
@@ -132,9 +143,12 @@ final class ToolRunner {
         let input: FileHandle
         let writes = DispatchQueue(label: "com.infeace.Instantools.tool-input", qos: .utility)
         let exited = DispatchSemaphore(value: 0)
+        let startedAt = ProcessInfo.processInfo.systemUptime
         var lines = LineBuffer()
         var stopRequested = false
-        var isReady = false
+        var liveness = Liveness()
+        /// Why the host killed it as hung.
+        var hung: String?
 
         init(process: Process, input: FileHandle) {
             self.process = process
@@ -144,9 +158,10 @@ final class ToolRunner {
 
     private let helpers: URL
 
-    init(tool: ToolId, helpers: URL) {
+    init(tool: ToolId, helpers: URL, checkInterval: Double) {
         self.tool = tool
         self.helpers = helpers
+        self.checkInterval = checkInterval
     }
 
     /// Also while it is stopping, and after it exited until the main thread has handled that.
@@ -192,7 +207,7 @@ final class ToolRunner {
     }
 
     func request(_ kind: HostRequest.Kind) {
-        guard let child, child.isReady, !child.stopRequested,
+        guard let child, child.liveness.isReady, !child.stopRequested,
               let line = MessageCoding.line(HostRequest(request: kind))
         else { return }
         // A tool that stops reading fills the pipe, and a blocked write must not freeze the menu bar.
@@ -222,6 +237,8 @@ final class ToolRunner {
         for handle in [input.fileHandleForWriting, output.fileHandleForReading] {
             _ = fcntl(handle.fileDescriptor, F_SETFD, FD_CLOEXEC)
         }
+        // A ping can race a tool's exit, and a write to a tool that is gone must fail rather than raise SIGPIPE.
+        _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
         let child = Child(process: process, input: input.fileHandleForWriting)
         output.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
@@ -256,13 +273,46 @@ final class ToolRunner {
         self.child = child
         state = .starting
         Diagnostics.log.notice("started \(self.tool.executableName, privacy: .public), pid \(process.processIdentifier)")
+        startChecks(child)
+    }
+
+    /// Native Cmd+Tab is off while InstantTab runs, so a hung InstantTab would leave the Mac without Cmd+Tab.
+    private func startChecks(_ child: Child) {
+        checks?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + checkInterval, repeating: checkInterval, leeway: .milliseconds(Int(checkInterval * 100)))
+        timer.setEventHandler { [weak self] in
+            MainActor.assumeIsolated { self?.check(child) }
+        }
+        timer.resume()
+        checks = timer
+    }
+
+    private func check(_ child: Child) {
+        guard child === self.child, !child.stopRequested, child.hung == nil else { return }
+        switch child.liveness.check() {
+        case .wait: break
+        case .ping: request(.ping)
+        case .stop:
+            let why = child.liveness.isReady ? "it stopped responding" : "it did not finish starting"
+            child.hung = why
+            Diagnostics.log.error("killing \(self.tool.executableName, privacy: .public): \(why, privacy: .public)")
+            // Its exit is handled like a crash: native Cmd+Tab is restored and the tool restarted.
+            kill(child.process.processIdentifier, SIGKILL)
+        }
+    }
+
+    func woke() {
+        child?.liveness.woke()
     }
 
     private func received(_ messages: [ToolMessage], from child: Child) {
         guard child === self.child else { return }
         for message in messages {
+            child.liveness.heard(message)
             if message.event == .ready {
-                child.isReady = true
+                let milliseconds = Int((ProcessInfo.processInfo.systemUptime - child.startedAt) * 1000)
+                Diagnostics.log.notice("\(self.tool.executableName, privacy: .public) ready after \(milliseconds) ms")
                 if !child.stopRequested { state = .running }
                 // So Settings opens with data, even though it asks for fresh status only while visible.
                 request(.status)
@@ -277,6 +327,8 @@ final class ToolRunner {
     private func exited(_ child: Child, reason: Process.TerminationReason, status: Int32) {
         guard child === self.child else { return }
         self.child = nil
+        checks?.cancel()
+        checks = nil
         latest = nil
         let asked = child.stopRequested
         didExit?(asked, reason == .exit)
@@ -300,7 +352,8 @@ final class ToolRunner {
             restart = work
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
         case .giveUp:
-            state = .failed("Quit unexpectedly \(RestartBackoff.maxExits) times within a minute, last with \(how).")
+            let last = child.hung.map { "because \($0)" } ?? "with \(how)"
+            state = .failed("Quit unexpectedly \(RestartBackoff.maxExits) times within a minute, last \(last).")
         }
     }
 }

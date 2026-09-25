@@ -21,7 +21,7 @@ A macOS menu bar app of small tools where latency is the product, each in its ow
 
 - Testable logic goes in the Core targets, which have no AppKit; LayoutSwitcherCore has no Carbon or CoreGraphics either. Private macOS APIs live only in SkyLightShim, each with a public fallback.
 - Tools are started only by the host, with Process or posix_spawn, never through LaunchServices, launchd or SMAppService. Started any other way, macOS treats a tool as an app of its own, without the host's permissions.
-- Each tool's hot path stays inside its own process. The channel to the host only carries status for Settings.
+- Each tool's hot path stays inside its own process. The channel to the host only carries status for Settings and the host's pings, which the tool answers on its main thread.
 - A tool keeps working for the grace period after the host is gone, then exits normally. Tools never write the config; Settings in the host owns every write.
 - Tools have no Info.plist, so tool code never reads identifiers or versions from `Bundle.main`. Nothing in a tool prints to stdout, which is the channel to the host.
 - Native Cmd+Tab must come back on every exit path of InstantTab: quit, pause, signals and crashes. The host restores it too after any exit it did not ask for.

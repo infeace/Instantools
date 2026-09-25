@@ -124,9 +124,9 @@ Settings and `~/.config/instantools/cmd-tab.json5` stay in sync, so edit whichev
 
 Instantools is one host process plus one process per tool.
 
-- **The host** owns the menu bar, Settings, the welcome window, Start at login and the settings file. It starts each enabled tool from `Contents/Helpers` and talks to it over its stdin and stdout, one JSON message per line, only to show live status.
+- **The host** owns the menu bar, Settings, the welcome window, Start at login and the settings file. It starts each enabled tool from `Contents/Helpers` and talks to it over its stdin and stdout, one JSON message per line, only to show live status and to check that it still answers.
 - **Each tool** does its whole job inside its own process: pressing Cmd+Tab or Control+Command does no IPC and never waits on anything.
-- **Supervision.** A tool that exits unexpectedly restarts at once, then after 1 and 5 seconds. After 5 exits within a minute it stays down and Settings offers to try again. If the host itself crashes, the tools keep working for 15 seconds, long enough for the login agent to bring the host back.
+- **Supervision.** A tool that exits unexpectedly restarts at once, then after 1 and 5 seconds. A tool that hangs is stopped and counts as one of those exits: the host pings each tool every 2 seconds, and stops one that misses 3 pings in a row or is not ready 12 seconds after it starts. After 5 exits within a minute it stays down and Settings offers to try again. If the host itself crashes, the tools keep working for 15 seconds, long enough for the login agent to bring the host back.
 - **Safe exits.** InstantTab restores native Cmd+Tab on every way out. The host also remembers whether InstantTab may have left it off, and restores it after any exit it did not ask for, at quit, and at the next launch after a crash. When InstantTab is off, Instantools leaves native Cmd+Tab alone, so another switcher keeps its setup.
 
 ## Develop

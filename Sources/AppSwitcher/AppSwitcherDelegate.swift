@@ -28,11 +28,7 @@ final class AppSwitcherDelegate: NSObject, NSApplicationDelegate {
     private var handlesCmdTab = false
     private var passThrough = BundleIdMatcher([])
     private var hostObservation: NSKeyValueObservation?
-    private lazy var channel = ToolChannel { [unowned self] request in
-        switch request.request {
-        case .status: ToolMessage(appSwitcher: status())
-        }
-    }
+    private lazy var channel = ToolChannel { [unowned self] in ToolMessage(appSwitcher: status()) }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NativeSwitcher.installExitHandlers()

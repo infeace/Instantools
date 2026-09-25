@@ -9,11 +9,7 @@ final class LayoutSwitcherDelegate: NSObject, NSApplicationDelegate {
     private lazy var tapPoll = PermissionPoll(
         allowed: { Permissions.inputMonitoring }, start: { [unowned self] in tap.start() }, thenLog: "permission granted, event tap running"
     )
-    private lazy var channel = ToolChannel { [unowned self] request in
-        switch request.request {
-        case .status: ToolMessage(layoutSwitcher: LayoutSwitcherStatus(tapRunning: tap.isRunning))
-        }
-    }
+    private lazy var channel = ToolChannel { [unowned self] in ToolMessage(layoutSwitcher: LayoutSwitcherStatus(tapRunning: tap.isRunning)) }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Diagnostics.log.notice("launched")

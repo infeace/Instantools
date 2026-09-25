@@ -6,12 +6,12 @@ import InstantoolsCore
 /// that stops reading holds up the tool's main thread.
 @MainActor
 public final class ToolChannel {
-    private let reply: (HostRequest) -> ToolMessage
+    private let status: () -> ToolMessage
     private let output = DispatchQueue(label: "com.infeace.Instantools.channel", qos: .utility)
     private var isStarted = false
 
-    public init(reply: @escaping (HostRequest) -> ToolMessage) {
-        self.reply = reply
+    public init(status: @escaping () -> ToolMessage) {
+        self.status = status
     }
 
     /// Call at the end of launch. The host shows the tool as running from the ready event; whether its tap or
@@ -43,7 +43,12 @@ public final class ToolChannel {
     }
 
     private func handle(_ requests: [HostRequest]) {
-        for request in requests { send(reply(request)) }
+        for request in requests {
+            switch request.request {
+            case .status: send(status())
+            case .ping: send(ToolMessage(event: .pong))
+            }
+        }
     }
 
     /// Stdin ends only when the host is gone. The tool keeps working for a while, so a host that crashed and
