@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Pinned rather than macos-latest: Settings builds against the macOS 26 SDK.
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Toolchain
+        run: swift --version
+      - name: Test
+        run: scripts/test.sh
+      # Signs ad hoc, since the runner has no local signing identity.
+      - name: Build the app bundle
+        run: scripts/build.sh

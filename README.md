@@ -12,6 +12,7 @@
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111?logo=apple&logoColor=white">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
   <img alt="Draw time" src="https://img.shields.io/badge/draw%20time-under%201%20frame-2ea44f">
+  <img alt="CI" src="https://github.com/infeace/Instantools/actions/workflows/ci.yml/badge.svg">
 </p>
 
 <p align="center">
