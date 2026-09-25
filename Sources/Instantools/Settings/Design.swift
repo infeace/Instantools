@@ -661,12 +661,18 @@ extension View {
             .overlay(Card.shape.strokeBorder(Card.stroke))
     }
 
+    /// Liquid Glass needs the macOS 26 SDK, which came with Swift 6.2. Built with older tools, Settings keeps
+    /// the look it has before macOS 26.
     @ViewBuilder func glassPanel(in shape: some Shape) -> some View {
+        #if compiler(>=6.2)
         if #available(macOS 26, *) {
             glassEffect(.regular, in: shape)
         } else {
             background(.regularMaterial, in: shape)
         }
+        #else
+        background(.regularMaterial, in: shape)
+        #endif
     }
 
     /// Each pane shows its own title, so the toolbar drops it and content scrolls under the toolbar.
@@ -679,10 +685,14 @@ extension View {
     }
 
     @ViewBuilder func glassButton(prominent: Bool = false) -> some View {
+        #if compiler(>=6.2)
         if #available(macOS 26, *) {
             if prominent { buttonStyle(.glassProminent) } else { buttonStyle(.glass) }
         } else {
             if prominent { buttonStyle(.borderedProminent) } else { buttonStyle(.bordered) }
         }
+        #else
+        if prominent { buttonStyle(.borderedProminent) } else { buttonStyle(.bordered) }
+        #endif
     }
 }

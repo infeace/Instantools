@@ -26,3 +26,18 @@ jobs:
       # Signs ad hoc, since the runner has no local signing identity.
       - name: Build the app bundle
         run: scripts/build.sh
+
+  # Xcode 16.2 is the newest that runs on macOS 14, so this is what builds for the oldest supported Mac.
+  oldest-toolchain:
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7
+      - name: Toolchain
+        run: swift --version
+      - name: Test
+        run: scripts/test.sh
+      - name: Build the app bundle
+        run: scripts/build.sh
