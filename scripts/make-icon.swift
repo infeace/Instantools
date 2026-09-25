@@ -1,4 +1,4 @@
-// Draws the InstantTab app icon and writes Resources/AppIcon.icns.
+// Draws the app icon and writes Resources/AppIcon.icns.
 // Run with: swift scripts/make-icon.swift
 import AppKit
 

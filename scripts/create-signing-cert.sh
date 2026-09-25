@@ -4,7 +4,7 @@
 # Input Monitoring grants survive rebuilds. macOS asks for your password to trust it.
 set -euo pipefail
 
-name="InstantTab Local Signing"
+name="Instantools Local Signing"
 keychain="$HOME/Library/Keychains/login.keychain-db"
 # The system LibreSSL writes PKCS12 files that `security import` accepts without -legacy.
 openssl=/usr/bin/openssl

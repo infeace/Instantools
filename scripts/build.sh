@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# Builds build/InstantTab.app and signs it with the stable local identity so macOS
-# keeps granted permissions across rebuilds.
+# Builds build/Instantools.app, with each tool as a helper inside it, and signs it with a stable local
+# identity so macOS keeps granted permissions across rebuilds.
 # Usage: scripts/build.sh [--debug] [--install] [--run]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-identity="InstantTab Local Signing"
-bundle_id="com.infeace.InstantTab"
+bundle_id="com.infeace.Instantools"
+# Product name, file name in Contents/Helpers, signing identifier.
+tools=(
+    "AppSwitcher InstantoolsAppSwitcher $bundle_id.AppSwitcher"
+    "LayoutSwitcher InstantoolsLayoutSwitcher $bundle_id.LayoutSwitcher"
+)
 config=release
 install=0
 run=0
@@ -19,55 +23,111 @@ for arg in "$@"; do
     esac
 done
 
+# The host and its tools running from under a path. By full path, since macOS cuts process names to 16
+# characters, too short for the tools' names.
+pids_under() {
+    local prefix="$1" pid comm
+    ps -axo pid=,comm= | while read -r pid comm; do
+        [[ "$comm" == "$prefix"* ]] || continue
+        case "${comm##*/}" in
+            Instantools | InstantoolsAppSwitcher | InstantoolsLayoutSwitcher) echo "$pid" ;;
+        esac
+    done
+}
+
 # Replacing the binary of a running event tap owner can leave input in a bad state, so quit first.
 stop_running() {
-    local path_prefix="$1" pid
-    for pid in $(pgrep -x InstantTab); do
-        [[ "$(ps -o comm= -p "$pid" 2>/dev/null)" == "$path_prefix"* ]] && { kill -TERM "$pid" 2>/dev/null || true; }
-    done
+    local prefix="$1" pids
+    pids="$(pids_under "$prefix")"
+    [[ -z "$pids" ]] && return 0
+    # shellcheck disable=SC2086
+    kill -TERM $pids 2>/dev/null || true
     for _ in {1..50}; do
-        local alive=0
-        for pid in $(pgrep -x InstantTab); do
-            [[ "$(ps -o comm= -p "$pid" 2>/dev/null)" == "$path_prefix"* ]] && alive=1
-        done
-        [[ $alive -eq 0 ]] && return 0
+        [[ -z "$(pids_under "$prefix")" ]] && return 0
         sleep 0.1
     done
-    echo "error: InstantTab under $path_prefix did not quit, not replacing it" >&2
+    echo "error: Instantools under $prefix did not quit, not replacing it" >&2
     exit 1
+}
+
+# Instantools replaces InstantTab and InstantLang. They stay installed with their settings, so either can
+# be started again to go back.
+retire_old_apps() {
+    local name label plist pids
+    for name in InstantTab InstantLang; do
+        label="com.infeace.$name"
+        plist="$HOME/Library/LaunchAgents/$label.plist"
+        if launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1; then
+            echo "Unloading the $name login agent"
+            launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
+        fi
+        pids="$(pgrep -x "$name" || true)"
+        if [[ -n "$pids" ]]; then
+            echo "Quitting $name"
+            # shellcheck disable=SC2086
+            kill -TERM $pids 2>/dev/null || true
+            for _ in {1..50}; do
+                pgrep -x "$name" >/dev/null || break
+                sleep 0.1
+            done
+        fi
+        if [[ -f "$plist" ]]; then
+            echo "Removing $plist. To go back to $name, quit Instantools, open $name and turn Start at login back on."
+            rm "$plist"
+            # Instantools' first launch turns on its own Start at login when an old app had it.
+            defaults write "$bundle_id" removedOldLoginAgents -array-add "$name"
+        fi
+    done
 }
 
 swift build -c "$config"
 bin_dir="$(swift build -c "$config" --show-bin-path)"
 
-app=build/InstantTab.app
+app=build/Instantools.app
 stop_running "$PWD/$app"
 rm -rf "$app"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-cp "$bin_dir/InstantTab" "$app/Contents/MacOS/InstantTab"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
+cp "$bin_dir/Instantools" "$app/Contents/MacOS/Instantools"
+for tool in "${tools[@]}"; do
+    read -r product helper _ <<<"$tool"
+    cp "$bin_dir/$product" "$app/Contents/Helpers/$helper"
+done
 cp Resources/Info.plist "$app/Contents/Info.plist"
 cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 build_number="$(git rev-list --count HEAD 2>/dev/null || echo 0)"
 plutil -replace CFBundleVersion -string "$build_number" "$app/Contents/Info.plist"
 
+# The second is the identity InstantTab used, so a Mac set up for it needs no new one.
 identities="$(security find-identity -v -p codesigning)"
-if grep -q "\"$identity\"" <<<"$identities"; then
-    codesign --force --sign "$identity" --identifier "$bundle_id" "$app"
-else
-    echo "warning: signing identity '$identity' not found, signing ad hoc." >&2
+identity=""
+for candidate in "Instantools Local Signing" "InstantTab Local Signing"; do
+    if grep -q "\"$candidate\"" <<<"$identities"; then
+        identity="$candidate"
+        break
+    fi
+done
+if [[ -z "$identity" ]]; then
+    echo "warning: signing identity 'Instantools Local Signing' not found, signing ad hoc." >&2
     echo "warning: permissions will reset on every build. Run scripts/create-signing-cert.sh once." >&2
-    codesign --force --sign - --identifier "$bundle_id" "$app"
+    identity="-"
 fi
-codesign --verify --strict "$app"
+# Helpers first: signing the app seals them in.
+for tool in "${tools[@]}"; do
+    read -r _ helper identifier <<<"$tool"
+    codesign --force --sign "$identity" --identifier "$identifier" "$app/Contents/Helpers/$helper"
+done
+codesign --force --sign "$identity" --identifier "$bundle_id" "$app"
+codesign --verify --strict --deep "$app"
 
 # Start at login writes this agent (see LoginItem.swift).
-agent="gui/$(id -u)/com.infeace.InstantTab"
+agent="gui/$(id -u)/$bundle_id"
 if [[ $install -eq 1 ]]; then
-    stop_running "$HOME/Applications/InstantTab.app"
+    stop_running "$HOME/Applications/Instantools.app"
+    retire_old_apps
     mkdir -p "$HOME/Applications"
-    rm -rf "$HOME/Applications/InstantTab.app"
-    ditto "$app" "$HOME/Applications/InstantTab.app"
-    app="$HOME/Applications/InstantTab.app"
+    rm -rf "$HOME/Applications/Instantools.app"
+    ditto "$app" "$HOME/Applications/Instantools.app"
+    app="$HOME/Applications/Instantools.app"
 fi
 
 echo "built $app"
