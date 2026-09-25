@@ -72,15 +72,30 @@ The bolt in the menu bar lists each tool with its status, and clicking a tool tu
 ## Install
 
 ```bash
+xcode-select --install              # once, unless Xcode or its command line tools are already installed
+git clone https://github.com/infeace/Instantools.git && cd Instantools
 scripts/create-signing-cert.sh      # once per Mac: a local signing identity, so permissions survive rebuilds
 scripts/build.sh --install --run    # build, copy to ~/Applications and launch
 ```
 
-Requires macOS 14 or later and a Swift 6 toolchain (the Xcode command line tools are enough). Quit any other Cmd+Tab replacement first.
+Requires macOS 14 or later and the Xcode 16 command line tools or later. Built with the Xcode 26 tools, Settings has the Liquid Glass look on macOS 26. Instantools is tested on macOS 26, so on another version please [open an issue](https://github.com/infeace/Instantools/issues) if something misbehaves. Quit any other Cmd+Tab replacement first.
+
+Creating the signing identity asks for your password once, to trust it. A build may then ask up to three times, once for each program it signs, whether `codesign` may use the identity's key. Always Allow stops those prompts for later builds, at a cost: any program you run could then sign with that key without asking, and pass itself off as Instantools to get the permissions you gave it. Allow asks again at the next build.
 
 On a fresh install a welcome window walks you through picking your tools, allowing their permissions and turning on Start at login.
 
 Coming from the standalone apps: `--install` quits the standalone InstantTab and InstantLang apps and removes their login agents, and leaves the apps and their settings where they are. On its first launch Instantools copies the standalone InstantTab app's settings, turns on the tools you used, and turns on Start at login if either app had it. Each time Instantools starts it quits the standalone apps if they are running, since they would fight it for the same keys. To go back, turn off Start at login in Instantools and quit it, then open the standalone app and turn its Start at login back on.
+
+## Uninstall
+
+Turn off Start at login in Settings > General, then choose Quit Instantools from the bolt in the menu bar, which brings native Cmd+Tab back. Then delete `~/Applications/Instantools.app`. To also remove your settings, its entries in Privacy & Security and the signing identity:
+
+```bash
+rm -rf ~/.config/instantools
+defaults delete com.infeace.Instantools
+tccutil reset All com.infeace.Instantools
+security delete-identity -t -c "Instantools Local Signing"
+```
 
 ## Permissions
 
