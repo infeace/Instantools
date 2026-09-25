@@ -91,6 +91,17 @@ Each tool runs as part of Instantools, so macOS asks once and lists only Instant
 
 Each tool's card in Settings > General shows the permissions it is missing right now, each with a button to allow it, and the sidebar marks a tool that needs attention in orange.
 
+## Privacy
+
+Accessibility and Input Monitoring are the same access a keylogger needs, so this is what Instantools does with them:
+
+- **No network.** Nothing in the app opens a connection. The GitHub button in About opens the page in your browser.
+- **Keys are never stored or logged.** InstantLang listens only to modifier keys (Control, Command, Shift, Option, Fn), never to the keys you type. InstantTab sees other keys only while its switcher is open and only with Cmd held, and acts on them there.
+- **What is kept.** Your settings in `~/.config/instantools` and the app's preferences. Logs go to the macOS log under `com.infeace.Instantools` and hold status only, such as tool starts, your layout list and switch timings.
+- **Check it yourself.** The event taps are in `Sources/LayoutSwitcher/ChordTap.swift` and `Sources/AppSwitcher/InputTaps.swift`, and the Cmd+Tab hotkey in `Sources/AppSwitcher/HotKeys.swift`.
+
+To report a security problem, see [SECURITY.md](SECURITY.md).
+
 ## Configure
 
 Settings and `~/.config/instantools/cmd-tab.json5` stay in sync, so edit whichever you prefer. The file documents every option, and an edit you save while Settings is open wins over a change still waiting to be written.
