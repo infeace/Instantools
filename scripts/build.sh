@@ -11,6 +11,11 @@ tools=(
     "AppSwitcher InstantoolsAppSwitcher $bundle_id.AppSwitcher"
     "LayoutSwitcher InstantoolsLayoutSwitcher $bundle_id.LayoutSwitcher"
 )
+process_names=(Instantools)
+for tool in "${tools[@]}"; do
+    read -r _ helper _ <<<"$tool"
+    process_names+=("$helper")
+done
 config=release
 install=0
 run=0
@@ -26,12 +31,12 @@ done
 # The host and its tools running from under a path. By full path, since macOS cuts process names to 16
 # characters, too short for the tools' names.
 pids_under() {
-    local prefix="$1" pid comm
+    local prefix="$1" pid comm name
     ps -axo pid=,comm= | while read -r pid comm; do
         [[ "$comm" == "$prefix"* ]] || continue
-        case "${comm##*/}" in
-            Instantools | InstantoolsAppSwitcher | InstantoolsLayoutSwitcher) echo "$pid" ;;
-        esac
+        for name in "${process_names[@]}"; do
+            if [[ "${comm##*/}" == "$name" ]]; then echo "$pid"; fi
+        done
     done
 }
 
@@ -74,7 +79,7 @@ retire_old_apps() {
         if [[ -f "$plist" ]]; then
             echo "Removing $plist. To go back to $name, quit Instantools, open $name and turn Start at login back on."
             rm "$plist"
-            # Instantools' first launch turns on its own Start at login when an old app had it.
+            # Instantools' next launch turns on its own Start at login in place of this one.
             defaults write "$bundle_id" removedOldLoginAgents -array-add "$name"
         fi
     done
