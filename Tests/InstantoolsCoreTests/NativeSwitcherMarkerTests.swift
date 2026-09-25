@@ -11,6 +11,15 @@ struct NativeSwitcherMarkerTests {
         #expect(!marker.mayBeOff)
     }
 
+    @Test func aSwitcherThatCouldNotStartLeavesNativeCmdTabAlone() {
+        var marker = NativeSwitcherMarker(mayBeOff: false)
+        marker.startingSwitcher()
+        marker.switcherFailedToStart()
+        // Another switcher may own the hotkeys, and quitting must not undo its setup.
+        let restores = marker.quitting(switcherWasRunning: false)
+        #expect(!restores)
+    }
+
     @Test func aSwitcherStillRunningAtQuitRestoresWithoutTheMarker() {
         var marker = NativeSwitcherMarker(mayBeOff: false)
         let restores = marker.quitting(switcherWasRunning: true)

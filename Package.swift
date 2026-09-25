@@ -39,5 +39,9 @@ let package = Package(
             name: "AppSwitcherKitTests",
             dependencies: ["AppSwitcherKit", "AppSwitcherCore"]
         ),
+        .testTarget(
+            name: "InstantoolsTests",
+            dependencies: ["Instantools", "InstantoolsCore"]
+        ),
     ]
 )

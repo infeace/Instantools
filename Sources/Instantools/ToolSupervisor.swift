@@ -8,34 +8,55 @@ import InstantoolsKit
 /// would be apps of their own, each with its own permission prompts.
 @MainActor
 final class ToolSupervisor {
+    /// Where the native Cmd+Tab marker is kept: the host's defaults, or memory in tests.
+    @MainActor
+    struct MarkerStore {
+        var load: () -> NativeSwitcherMarker
+        var save: (NativeSwitcherMarker) -> Void
+
+        static var hostPreferences: MarkerStore {
+            MarkerStore(load: { HostPreferences.nativeSwitcher }, save: { HostPreferences.nativeSwitcher = $0 })
+        }
+    }
+
     private var runners: [ToolId: ToolRunner] = [:]
+    private let marker: MarkerStore
     var onChange: (() -> Void)?
 
-    init() {
+    /// `helpers` and `marker` are for tests.
+    init(helpers: URL = Bundle.main.bundleURL.appending(path: "Contents/Helpers"), marker: MarkerStore = .hostPreferences) {
+        self.marker = marker
         for tool in ToolId.allCases {
-            let runner = ToolRunner(tool: tool)
+            let runner = ToolRunner(tool: tool, helpers: helpers)
             runner.onChange = { [weak self] in self?.onChange?() }
             runners[tool] = runner
         }
         let switcher = runners[.appSwitcher]
-        switcher?.willLaunch = { HostPreferences.nativeSwitcher.startingSwitcher() }
+        switcher?.willLaunch = { [weak self] in self?.editMarker { $0.startingSwitcher() } }
+        switcher?.didFailToLaunch = { [weak self] in self?.editMarker { $0.switcherFailedToStart() } }
         // The tool restores native Cmd+Tab on its own way out. A kill or a crash it could not handle skips
         // that, so the host does it before anything else.
-        switcher?.didExit = { asked, normally in
-            Self.updateNativeSwitcher { $0.switcherExited(asked: asked, normally: normally) }
+        switcher?.didExit = { [weak self] asked, normally in
+            self?.updateNativeSwitcher { $0.switcherExited(asked: asked, normally: normally) }
         }
     }
 
     /// At launch, before any tool starts. InstantTab turns native Cmd+Tab off again as it starts.
     func recoverNativeSwitcher(stoppedLeftoverSwitcher: Bool) {
-        Self.updateNativeSwitcher { $0.launched(stoppedLeftoverSwitcher: stoppedLeftoverSwitcher) }
+        updateNativeSwitcher { $0.launched(stoppedLeftoverSwitcher: stoppedLeftoverSwitcher) }
     }
 
     /// Restores before the cleared marker is saved, so a host that dies in between restores at its next launch.
-    private static func updateNativeSwitcher(_ step: (inout NativeSwitcherMarker) -> Bool) {
-        var marker = HostPreferences.nativeSwitcher
-        if step(&marker) { NativeSwitcher.restore() }
-        HostPreferences.nativeSwitcher = marker
+    private func updateNativeSwitcher(_ step: (inout NativeSwitcherMarker) -> Bool) {
+        var current = marker.load()
+        if step(&current) { NativeSwitcher.restore() }
+        marker.save(current)
+    }
+
+    private func editMarker(_ edit: (inout NativeSwitcherMarker) -> Void) {
+        var current = marker.load()
+        edit(&current)
+        marker.save(current)
     }
 
     func state(_ tool: ToolId) -> ToolState {
@@ -79,7 +100,7 @@ final class ToolSupervisor {
         for child in stopping where child.exited.wait(timeout: deadline) != .success {
             kill(child.process.processIdentifier, SIGKILL)
         }
-        Self.updateNativeSwitcher { $0.quitting(switcherWasRunning: switcherWasRunning) }
+        updateNativeSwitcher { $0.quitting(switcherWasRunning: switcherWasRunning) }
     }
 }
 
@@ -93,6 +114,8 @@ final class ToolRunner {
     private(set) var latest: ToolMessage?
     var onChange: (() -> Void)?
     var willLaunch: (() -> Void)?
+    /// After `willLaunch`, when the process could not be started.
+    var didFailToLaunch: (() -> Void)?
     /// Whether the host asked it to stop, and whether it exited through `exit()` rather than a signal.
     var didExit: ((_ asked: Bool, _ normally: Bool) -> Void)?
 
@@ -119,8 +142,11 @@ final class ToolRunner {
         }
     }
 
-    init(tool: ToolId) {
+    private let helpers: URL
+
+    init(tool: ToolId, helpers: URL) {
         self.tool = tool
+        self.helpers = helpers
     }
 
     /// Also while it is stopping, and after it exited until the main thread has handled that.
@@ -174,7 +200,7 @@ final class ToolRunner {
     }
 
     private func launch() {
-        let executable = Bundle.main.bundleURL.appending(path: "Contents/Helpers/\(tool.executableName)")
+        let executable = helpers.appending(path: tool.executableName)
         guard FileManager.default.isExecutableFile(atPath: executable.path) else {
             state = .failed("\(tool.executableName) is missing from the app. Reinstall Instantools.")
             return
@@ -222,6 +248,7 @@ final class ToolRunner {
             try process.run()
         } catch {
             output.fileHandleForReading.readabilityHandler = nil
+            didFailToLaunch?()
             state = .failed("Could not start: \(error.localizedDescription)")
             Diagnostics.log.error("could not start \(self.tool.executableName, privacy: .public): \(error.localizedDescription, privacy: .public)")
             return

@@ -13,6 +13,12 @@ public struct NativeSwitcherMarker: Equatable, Sendable {
         mayBeOff = true
     }
 
+    /// When the tool could not be started at all, so nothing touched native Cmd+Tab. The marker was clear
+    /// before the start, since the host's launch and every exit clear it.
+    public mutating func switcherFailedToStart() {
+        mayBeOff = false
+    }
+
     /// True when the host has to restore. `normally` is an exit through `exit()`, whose atexit handler
     /// restored. A signal may have skipped the crash handler, and after an exit it did not ask for the host
     /// restores anyway. Either way native Cmd+Tab is back, until the next start.
