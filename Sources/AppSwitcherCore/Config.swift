@@ -60,6 +60,8 @@ public struct Config: Sendable, Equatable {
     public var scope = Scope.all
     public var windowlessApps = Placement.show
     public var iconSize = 96.0
+    /// Off, only a click picks an app, so a pointer resting where the switcher opens is never chosen.
+    public var selectOnHover = true
     public var exclude: [Exclusion] = []
     public var displayGroups: [DisplayGroup] = []
     public var appKeys: [AppKey] = []
@@ -144,7 +146,7 @@ extension Config {
         public var warnings: [String]
     }
 
-    private static let knownKeys: Set = ["showDelayMs", "scope", "windowlessApps", "iconSize", "exclude", "displayGroups", "appKeys", "passThrough"]
+    private static let knownKeys: Set = ["showDelayMs", "scope", "windowlessApps", "iconSize", "selectOnHover", "exclude", "displayGroups", "appKeys", "passThrough"]
     private static let knownExclusionKeys: Set = ["bundleId", "when"]
     private static let knownGroupKeys: Set = ["name", "match"]
 
@@ -181,6 +183,10 @@ extension Config {
                 throw .invalid("iconSize must be a number from 32 to 256")
             }
             config.iconSize = number
+        }
+        if let value = root["selectOnHover"] {
+            guard isBoolean(value), let flag = value as? Bool else { throw .invalid("selectOnHover must be true or false") }
+            config.selectOnHover = flag
         }
         if let value = root["exclude"] {
             guard let rules = value as? [Any] else { throw .invalid("exclude must be a list") }
@@ -374,6 +380,10 @@ extension Config {
 
           // Icon size in points. Shrinks automatically when the apps do not fit.
           iconSize: \(Self.number(iconSize)),
+
+          // Whether pointing at an app selects it. false selects only on a click, so a pointer resting
+          // where the switcher opens never changes which app Cmd+Tab switches to.
+          selectOnHover: \(selectOnHover),
 
           // Apps to leave out, by bundle id. A trailing * matches a prefix.
           // "when" is "always" (the default) or "noWindows".

@@ -78,6 +78,12 @@ struct SwitcherPane: View {
                 .labelsHidden()
                 .fixedSize()
             }
+            RowDivider()
+            SettingsRow(title: "Select by pointing", subtitle: "Off, only a click picks an app, so a resting pointer never changes where Cmd+Tab goes.") {
+                Toggle("Select by pointing", isOn: model.binding(\.selectOnHover))
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
         }
     }
 

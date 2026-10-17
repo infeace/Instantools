@@ -49,6 +49,11 @@ public enum PanelStyle {
         dark ? Shade(white: 1, alpha: 0.16) : Shade(white: 0, alpha: 0.1)
     }
 
+    /// Half the selection's, so a pointed-at app is told apart from the one Cmd+Tab switches to.
+    public static func hoverHighlight(dark: Bool) -> Shade {
+        dark ? Shade(white: 1, alpha: 0.08) : Shade(white: 0, alpha: 0.05)
+    }
+
     private static var badgeImages: [Character: CGImage] = [:]
 
     public static func nameText(name: String, dark: Bool) -> NSAttributedString {

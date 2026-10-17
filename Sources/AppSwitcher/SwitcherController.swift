@@ -18,6 +18,7 @@ final class SwitcherController {
             exclusions = ExclusionMatcher(config.exclude)
             appKeys = AppKeyMap(config.appKeys)
             panel.prepareBadges(for: config.appKeys.map(\.key))
+            panel.selectsOnHover = config.selectOnHover
             resolveGroups()
         }
     }

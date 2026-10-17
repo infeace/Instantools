@@ -13,6 +13,7 @@ final class SwitcherPanel {
     private let root = CALayer()
     private let background = CALayer()
     private let highlight = CALayer()
+    private let hoverHighlight = CALayer()
     private let nameLayer = CATextLayer()
     private var tiles: [CALayer] = []
     private var badges: [CALayer] = []
@@ -21,6 +22,8 @@ final class SwitcherPanel {
     private var entries: [SwitcherEntry] = []
     private(set) var isVisible = false
     private var selectedIndex = 0
+    /// The tile under the pointer when pointing does not select, shown without changing the selection.
+    private var hoveredIndex: Int?
     /// A pid, since the list can change between mouse-down and mouse-up.
     private var pressedPid: Int32?
     /// Built and measured once per name, since the selection moves on every Tab. The colors are part of the
@@ -28,6 +31,7 @@ final class SwitcherPanel {
     private var nameTexts: [String: (text: NSAttributedString, width: CGFloat)] = [:]
     private var isDark = false
 
+    var selectsOnHover = true
     var onHover: ((Int) -> Void)?
     var onClick: ((Int) -> Void)?
     var view: NSView { mouseView }
@@ -54,9 +58,13 @@ final class SwitcherPanel {
         background.cornerCurve = .continuous
         highlight.cornerRadius = PanelStyle.highlightCornerRadius
         highlight.cornerCurve = .continuous
+        hoverHighlight.cornerRadius = PanelStyle.highlightCornerRadius
+        hoverHighlight.cornerCurve = .continuous
+        hoverHighlight.isHidden = true
         nameLayer.alignmentMode = .center
         nameLayer.truncationMode = .end
         root.addSublayer(background)
+        root.addSublayer(hoverHighlight)
         root.addSublayer(highlight)
         root.addSublayer(nameLayer)
     }
@@ -102,6 +110,8 @@ final class SwitcherPanel {
         panel.orderOut(nil)
         isVisible = false
         pressedPid = nil
+        hoveredIndex = nil
+        hoverHighlight.isHidden = true
     }
 
     /// Only real pointer movement selects, so a panel opening under a resting pointer keeps its selection.
@@ -110,7 +120,13 @@ final class SwitcherPanel {
         let index = index(at: point)
         switch type {
         case .mouseMoved:
-            if let index, index != selectedIndex { onHover?(index) }
+            if !selectsOnHover {
+                hover(index)
+            } else if let index, index != selectedIndex {
+                onHover?(index)
+            }
+        case .mouseExited:
+            hover(nil)
         case .leftMouseDown:
             pressedPid = index.map { entries[$0].pid }
             if let index { onHover?(index) }
@@ -120,6 +136,25 @@ final class SwitcherPanel {
         default:
             break
         }
+    }
+
+    /// The name follows the pointer, and goes back to the selected app's when the pointer leaves the icons.
+    private func hover(_ index: Int?) {
+        let index = index == selectedIndex ? nil : index
+        guard index != hoveredIndex else { return }
+        hoveredIndex = index
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if let index {
+            hoverHighlight.frame = tileFrame(index)
+        }
+        hoverHighlight.isHidden = index == nil
+        placeName(index ?? selectedIndex)
+        CATransaction.commit()
+    }
+
+    private func tileFrame(_ index: Int) -> CGRect {
+        CGRect(x: PanelStyle.padding + CGFloat(index) * tileSize, y: PanelStyle.padding + PanelStyle.nameHeight, width: tileSize, height: tileSize)
     }
 
     private func index(at point: CGPoint) -> Int? {
@@ -157,6 +192,7 @@ final class SwitcherPanel {
         background.borderWidth = 1 / scale
         background.borderColor = PanelStyle.border(dark: dark).cgColor
         highlight.backgroundColor = PanelStyle.highlight(dark: dark).cgColor
+        hoverHighlight.backgroundColor = PanelStyle.hoverHighlight(dark: dark).cgColor
         nameLayer.contentsScale = scale
         if dark != isDark {
             isDark = dark
@@ -201,11 +237,19 @@ final class SwitcherPanel {
         if sizeChanged { panel.invalidateShadow() }
     }
 
+    /// Clears any hover, so after a key moves the selection the name is the selected app's again.
     private func placeSelection(_ index: Int) {
         guard entries.indices.contains(index) else { return }
         selectedIndex = index
+        hoveredIndex = nil
+        hoverHighlight.isHidden = true
+        highlight.frame = tileFrame(index)
+        placeName(index)
+    }
+
+    private func placeName(_ index: Int) {
+        guard entries.indices.contains(index) else { return }
         let x = PanelStyle.padding + CGFloat(index) * tileSize
-        highlight.frame = CGRect(x: x, y: PanelStyle.padding + PanelStyle.nameHeight, width: tileSize, height: tileSize)
         let name = nameText(for: entries[index])
         let label = NameLabel.span(
             textWidth: name.width, maxWidth: PanelStyle.nameMaxWidth(tile: tileSize),
@@ -229,13 +273,14 @@ private final class MouseView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeAlways, .inVisibleRect], owner: self))
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
     }
 
     required init?(coder: NSCoder) { nil }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func mouseMoved(with event: NSEvent) { forward(event) }
+    override func mouseExited(with event: NSEvent) { forward(event) }
     override func mouseDown(with event: NSEvent) { forward(event) }
     override func mouseUp(with event: NSEvent) { forward(event) }
 

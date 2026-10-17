@@ -19,6 +19,7 @@ struct ConfigTests {
         config.scope = .mouseDisplay
         config.windowlessApps = .end
         config.iconSize = 72.5
+        config.selectOnHover = false
         config.exclude = [
             .init(bundleId: "com.apple.finder", when: .noWindows),
             .init(bundleId: "com.parallels.*"),
@@ -78,7 +79,7 @@ struct ConfigTests {
     @Test func readsEveryKey() throws {
         let parsed = try parse("""
         {
-          showDelayMs: 0, scope: "mouseDisplay", windowlessApps: "end", iconSize: 64,
+          showDelayMs: 0, scope: "mouseDisplay", windowlessApps: "end", iconSize: 64, selectOnHover: false,
           exclude: ["com.a", { bundleId: "com.b", when: "noWindows" }],
         }
         """)
@@ -86,6 +87,7 @@ struct ConfigTests {
         #expect(parsed.config.scope == .mouseDisplay)
         #expect(parsed.config.windowlessApps == .end)
         #expect(parsed.config.iconSize == 64)
+        #expect(parsed.config.selectOnHover == false)
         #expect(parsed.config.exclude == [
             .init(bundleId: "com.a"),
             .init(bundleId: "com.b", when: .noWindows),
@@ -118,6 +120,12 @@ struct ConfigTests {
         }
         #expect(throws: ConfigError.invalid("showDelayMs must be a whole number from 0 to 500")) {
             try parse("{ showDelayMs: true }")
+        }
+        #expect(throws: ConfigError.invalid("selectOnHover must be true or false")) {
+            try parse("{ selectOnHover: 1 }")
+        }
+        #expect(throws: ConfigError.invalid("selectOnHover must be true or false")) {
+            try parse("{ selectOnHover: \"no\" }")
         }
         #expect(throws: ConfigError.invalid("exclude[0].bundleId must be a non-empty string")) {
             try parse("{ exclude: [{ when: \"always\" }] }")
