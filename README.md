@@ -47,7 +47,7 @@ An app switcher with the control macOS leaves out.
 | **Up, Down** | App Exposé for the selected app |
 | **Q, H** | Quit or hide the selected app |
 | **App keys** | Go straight to the app bound to that key (Settings > App keys) |
-| **Mouse** | Point to select, click to switch |
+| **Mouse** | Point to select, click to switch. With Select by pointing off, pointing only highlights, so a resting mouse never changes the selection |
 | **Esc** | Cancel |
 
 ## InstantLang
@@ -76,6 +76,10 @@ Window snapping that lands the moment you ask, with nothing animating in between
 - **Across monitors.** A snapped window takes the same place on the next monitor, so a half stays a half. Any other window keeps its size.
 - **Again.** Pressing a half again moves the window on to the next monitor that way, cycles it through a half, two thirds and one third, or does nothing, as you choose.
 - **Gaps.** Optional space between snapped windows and around them.
+
+<p align="center">
+  <img src="docs/images/snapping.png" width="640" alt="The Snapping pane">
+</p>
 
 Quit Rectangle first, and turn off macOS's own tiling in System Settings > Desktop & Dock: Drag windows to screen edges to tile, and Drag windows to menu bar to fill screen. Settings > Snapping reminds you of both, and marks any shortcut another app still has. Shortcuts are listed in Settings > Shortcuts and changed in `~/.config/instantools/snap.json5`.
 
@@ -116,7 +120,7 @@ security delete-identity -t -c "Instantools Local Signing"
 Each tool runs as part of Instantools, so macOS asks once and lists only Instantools in Privacy & Security.
 
 - **Accessibility** covers every tool. InstantTab works without it, but the keys inside the switcher and raising the right window need it. InstantSnap needs it to move other apps' windows.
-- **Input Monitoring** is all InstantLang needs when you use it without InstantTab. With Accessibility allowed it is not needed, unless Input Monitoring is switched off for Instantools: that stops InstantLang and the keys inside the switcher even with Accessibility.
+- **Input Monitoring** is all InstantLang needs when you use it on its own. With Accessibility allowed, as InstantTab and InstantSnap ask, it is not needed, unless Input Monitoring is switched off for Instantools: that stops InstantLang and the keys inside the switcher even with Accessibility.
 
 Each tool's card in Settings > General shows the permissions it is missing right now, each with a button to allow it, and the sidebar marks a tool that needs attention in orange.
 
@@ -125,7 +129,7 @@ Each tool's card in Settings > General shows the permissions it is missing right
 Accessibility and Input Monitoring are the same access a keylogger needs, so this is what Instantools does with them:
 
 - **No network.** Nothing in the app opens a connection. The GitHub button in About opens the page in your browser.
-- **Keys are never stored or logged.** InstantLang listens only to modifier keys (Control, Command, Shift, Option, Fn), never to the keys you type. InstantTab sees other keys only while its switcher is open and only with Cmd held, and acts on them there.
+- **Keys are never stored or logged.** InstantLang listens only to modifier keys (Control, Command, Shift, Option, Fn), never to the keys you type. InstantTab sees other keys only while its switcher is open and only with Cmd held, and acts on them there. InstantSnap gets only its own shortcuts, from macOS.
 - **What is kept.** Your settings in `~/.config/instantools` and the app's preferences. Logs go to the macOS log under `com.infeace.Instantools` and hold status only, such as tool starts, your layout list and switch timings.
 - **Mouse.** InstantSnap watches the left mouse button to tell when a window is dragged, and keeps nothing of it.
 - **Check it yourself.** The event taps are in `Sources/LayoutSwitcher/ChordTap.swift` and `Sources/AppSwitcher/InputTaps.swift`, the hotkeys in `Sources/AppSwitcher/HotKeys.swift` and `Sources/WindowSnapper/SnapHotKeys.swift`, and the mouse watch in `Sources/WindowSnapper/DragSnapper.swift`.
@@ -188,11 +192,11 @@ Panes are `general`, `switcher`, `keys`, `monitors`, `exclusions`, `language` (t
 | Path | What |
 |---|---|
 | `Sources/Instantools` | The host: menu bar, Settings, welcome window, Start at login, tool supervisor, first-launch migration |
-| `Sources/InstantoolsCore` | Tool ids, host and tool messages, restart backoff, migration decisions, tool and permission states. Unit tested |
-| `Sources/InstantoolsKit` | Shared by the host and the tools: the tool side of the channel, logging, permissions, the keyboard layout list |
+| `Sources/InstantoolsCore` | Tool ids, host and tool messages, restart backoff, migration decisions, tool and permission states, the config file protocol. Unit tested |
+| `Sources/InstantoolsKit` | Shared by the host and the tools: the tool side of the channel, the config file store, logging, permissions, the keyboard layout list |
 | `Sources/AppSwitcher` | InstantTab: input, switcher panel, focus |
 | `Sources/AppSwitcherCore` | Its pure logic: filtering, monitor groups, config. Unit tested |
-| `Sources/AppSwitcherKit` | What Settings shares with it: config store, displays, native Cmd+Tab, panel style |
+| `Sources/AppSwitcherKit` | What Settings shares with it: its config store, displays, native Cmd+Tab, panel style |
 | `Sources/LayoutSwitcher` | InstantLang: event tap and input sources |
 | `Sources/LayoutSwitcherCore` | Its pure logic: chord detection and layout choice. Unit tested |
 | `Sources/WindowSnapper` | InstantSnap: hotkeys, window moves, drag watch, preview |

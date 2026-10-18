@@ -13,7 +13,7 @@ A macOS menu bar app of small tools where latency is the product, each in its ow
 
 - `Instantools` is the host: menu bar, Settings, the first-launch welcome, Start at login, the tool supervisor and the first-launch migration.
 - `InstantoolsCore` holds tool ids, host and tool messages, restart backoff, migration decisions, tool and permission states, and the config file protocol. `InstantoolsKit` is shared by the host and the tools: the tool side of the channel, the config file store, logging, permissions and the keyboard layout list.
-- `AppSwitcher` is InstantTab, the Cmd+Tab tool, `AppSwitcherCore` its pure logic, and `AppSwitcherKit` what Settings shares with it: the config store, displays, native Cmd+Tab and the panel style.
+- `AppSwitcher` is InstantTab, the Cmd+Tab tool, `AppSwitcherCore` its pure logic, and `AppSwitcherKit` what Settings shares with it: its config store, displays, native Cmd+Tab and the panel style.
 - `LayoutSwitcher` is InstantLang, the layout tool, and `LayoutSwitcherCore` its pure logic.
 - `WindowSnapper` is InstantSnap, the window snapping tool, and `WindowSnapperCore` its pure logic and its config, which Settings shares.
 - A new tool is a case in `ToolId`, its status in `ToolMessage`, an executable target, a line in the `tools` list of `scripts/build.sh`, a Settings pane, and its icon, drawn by `scripts/make-icon.swift` as `Resources/<name>.png` and copied by `scripts/build.sh`.
