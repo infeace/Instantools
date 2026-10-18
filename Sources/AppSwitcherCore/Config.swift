@@ -1,4 +1,5 @@
 import Foundation
+import InstantoolsCore
 
 public struct Config: Sendable, Equatable {
     public enum Scope: Sendable, Hashable {
@@ -128,43 +129,23 @@ public struct BundleIdMatcher: Sendable {
     }
 }
 
-public enum ConfigError: Error, Equatable, CustomStringConvertible {
-    case syntax(String)
-    case invalid(String)
+extension Config: ConfigFile {
+    public static let fileName = "cmd-tab.json5"
 
-    public var description: String {
-        switch self {
-        case .syntax(let message): "syntax error: \(message)"
-        case .invalid(let message): message
-        }
-    }
-}
-
-extension Config {
-    public struct Parsed: Sendable, Equatable {
-        public var config: Config
-        public var warnings: [String]
-    }
+    public typealias Parsed = ParsedConfig<Config>
 
     private static let knownKeys: Set = ["showDelayMs", "scope", "windowlessApps", "iconSize", "selectOnHover", "exclude", "displayGroups", "appKeys", "passThrough"]
     private static let knownExclusionKeys: Set = ["bundleId", "when"]
     private static let knownGroupKeys: Set = ["name", "match"]
 
     public static func parse(_ data: Data) throws(ConfigError) -> Parsed {
-        let object: Any
-        do {
-            object = try JSONSerialization.jsonObject(with: data, options: [.json5Allowed])
-        } catch {
-            let nsError = error as NSError
-            throw .syntax(nsError.userInfo[NSDebugDescriptionErrorKey] as? String ?? nsError.localizedDescription)
-        }
-        guard let root = object as? [String: Any] else { throw .invalid("the config must be an object") }
+        let root = try ConfigValues.object(from: data)
 
         var config = Config()
         var warnings = root.keys.sorted().filter { !knownKeys.contains($0) }.map { "unknown key '\($0)' ignored" }
 
         if let value = root["showDelayMs"] {
-            guard !isBoolean(value), let number = value as? Int, (0...500).contains(number) else {
+            guard !ConfigValues.isBoolean(value), let number = value as? Int, (0...500).contains(number) else {
                 throw .invalid("showDelayMs must be a whole number from 0 to 500")
             }
             config.showDelayMs = number
@@ -176,16 +157,16 @@ extension Config {
             config.scope = scope
         }
         if let value = root["windowlessApps"] {
-            config.windowlessApps = try enumValue("windowlessApps", value)
+            config.windowlessApps = try ConfigValues.enumValue("windowlessApps", value)
         }
         if let value = root["iconSize"] {
-            guard !isBoolean(value), let number = value as? Double, (32...256).contains(number) else {
+            guard !ConfigValues.isBoolean(value), let number = value as? Double, (32...256).contains(number) else {
                 throw .invalid("iconSize must be a number from 32 to 256")
             }
             config.iconSize = number
         }
         if let value = root["selectOnHover"] {
-            guard isBoolean(value), let flag = value as? Bool else { throw .invalid("selectOnHover must be true or false") }
+            guard ConfigValues.isBoolean(value), let flag = value as? Bool else { throw .invalid("selectOnHover must be true or false") }
             config.selectOnHover = flag
         }
         if let value = root["exclude"] {
@@ -301,24 +282,9 @@ extension Config {
         }
         var when = Exclusion.When.always
         if let value = rule["when"] {
-            when = try enumValue("exclude[\(index)].when", value)
+            when = try ConfigValues.enumValue("exclude[\(index)].when", value)
         }
         return Exclusion(bundleId: bundleId, when: when)
-    }
-
-    /// JSON booleans bridge to NSNumber and would otherwise pass as 0 or 1.
-    private static func isBoolean(_ value: Any) -> Bool {
-        CFGetTypeID(value as CFTypeRef) == CFBooleanGetTypeID()
-    }
-
-    private static func enumValue<Value: RawRepresentable & CaseIterable>(
-        _ key: String, _ value: Any
-    ) throws(ConfigError) -> Value where Value.RawValue == String {
-        guard let raw = value as? String, let parsed = Value(rawValue: raw) else {
-            let allowed = Value.allCases.map { "\"\($0.rawValue)\"" }.joined(separator: ", ")
-            throw .invalid("\(key) must be one of \(allowed)")
-        }
-        return parsed
     }
 }
 
@@ -326,8 +292,8 @@ extension Config {
     public var fileContents: String {
         let rules = exclude.map { rule in
             rule.when == .always
-                ? "    \(Self.quoted(rule.bundleId)),"
-                : "    { bundleId: \(Self.quoted(rule.bundleId)), when: \(Self.quoted(rule.when.rawValue)) },"
+                ? "    \(ConfigValues.quoted(rule.bundleId)),"
+                : "    { bundleId: \(ConfigValues.quoted(rule.bundleId)), when: \(ConfigValues.quoted(rule.when.rawValue)) },"
         }
         let examples = [
             "    // \"com.example.App\",",
@@ -336,23 +302,23 @@ extension Config {
         let groupLines = displayGroups.map { group in
             let match = group.rules.map { rule in
                 switch rule {
-                case .name(let pattern): "{ name: \(Self.quoted(pattern)) }"
-                case .uuid(let uuid): "{ uuid: \(Self.quoted(uuid)) }"
-                default: Self.quoted(rule.keyword ?? "")
+                case .name(let pattern): "{ name: \(ConfigValues.quoted(pattern)) }"
+                case .uuid(let uuid): "{ uuid: \(ConfigValues.quoted(uuid)) }"
+                default: ConfigValues.quoted(rule.keyword ?? "")
                 }
             }
-            return "    { name: \(Self.quoted(group.name)), match: [\(match.joined(separator: ", "))] },"
+            return "    { name: \(ConfigValues.quoted(group.name)), match: [\(match.joined(separator: ", "))] },"
         }
         // JSON5 names must not start with a digit unless quoted.
         let keyLines = appKeys.map { binding in
-            let name = binding.key.isNumber ? Self.quoted(String(binding.key)) : String(binding.key)
-            return "    \(name): \(Self.quoted(binding.bundleId)),"
+            let name = binding.key.isNumber ? ConfigValues.quoted(String(binding.key)) : String(binding.key)
+            return "    \(name): \(ConfigValues.quoted(binding.bundleId)),"
         }
         let keyExamples = [
             "    // f: \"com.apple.finder\",",
             "    // \"1\": \"com.apple.Safari\",",
         ]
-        let passLines = passThrough.map { "    \(Self.quoted($0))," }
+        let passLines = passThrough.map { "    \(ConfigValues.quoted($0))," }
         let passExamples = ["    // \"com.parallels.desktop.console\","]
         let groupExamples = [
             "    // { name: \"Laptop\", match: [\"builtIn\"] },",
@@ -372,11 +338,11 @@ extension Config {
           //   "focusedDisplay"  apps with a window on the display of the focused window
           //   "mouseGroup"      apps on the first group below that contains the display under the mouse
           //   "group:<name>"    apps on the displays of one group below
-          scope: \(Self.quoted(scope.rawValue)),
+          scope: \(ConfigValues.quoted(scope.rawValue)),
 
           // Apps with no visible window (hidden, minimized or windowless):
           //   "show" in recent order, "end" after the others, or "hide".
-          windowlessApps: \(Self.quoted(windowlessApps.rawValue)),
+          windowlessApps: \(ConfigValues.quoted(windowlessApps.rawValue)),
 
           // Icon size in points. Shrinks automatically when the apps do not fit.
           iconSize: \(Self.number(iconSize)),
@@ -413,25 +379,6 @@ extension Config {
         }
 
         """
-    }
-
-    public static var defaultFileContents: String { Config().fileContents }
-
-    /// `fileContents`, once they parse back to this config, so Settings never writes a file that does not
-    /// parse or reads back as other settings.
-    public func checkedFileContents() throws(ConfigError) -> String {
-        let contents = fileContents
-        guard try Config.parse(Data(contents.utf8)).config == self else {
-            throw .invalid("the file would read back as different settings")
-        }
-        return contents
-    }
-
-    private static func quoted(_ string: String) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: string, options: [.fragmentsAllowed, .withoutEscapingSlashes]),
-              let encoded = String(data: data, encoding: .utf8)
-        else { return "\"\"" }
-        return encoded
     }
 
     private static func number(_ value: Double) -> String {

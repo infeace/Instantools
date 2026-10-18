@@ -25,11 +25,16 @@ public struct ToolMessage: Codable, Equatable, Sendable {
     public var event: ToolEvent?
     public var appSwitcher: AppSwitcherStatus?
     public var layoutSwitcher: LayoutSwitcherStatus?
+    public var windowSnapper: WindowSnapperStatus?
 
-    public init(event: ToolEvent? = nil, appSwitcher: AppSwitcherStatus? = nil, layoutSwitcher: LayoutSwitcherStatus? = nil) {
+    public init(
+        event: ToolEvent? = nil, appSwitcher: AppSwitcherStatus? = nil, layoutSwitcher: LayoutSwitcherStatus? = nil,
+        windowSnapper: WindowSnapperStatus? = nil
+    ) {
         self.event = event
         self.appSwitcher = appSwitcher
         self.layoutSwitcher = layoutSwitcher
+        self.windowSnapper = windowSnapper
     }
 }
 
@@ -68,6 +73,18 @@ public struct LayoutSwitcherStatus: Codable, Equatable, Sendable {
 
     public init(tapRunning: Bool = false) {
         self.tapRunning = tapRunning
+    }
+}
+
+public struct WindowSnapperStatus: Codable, Equatable, Sendable {
+    /// Without it no window can be moved. Checked by the tool, though macOS gives it the host's answer.
+    public var accessibility: Bool
+    /// Shortcuts another app already has, in snap.json5's form, such as ctrl+opt+left.
+    public var unavailableShortcuts: [String]
+
+    public init(accessibility: Bool = false, unavailableShortcuts: [String] = []) {
+        self.accessibility = accessibility
+        self.unavailableShortcuts = unavailableShortcuts
     }
 }
 

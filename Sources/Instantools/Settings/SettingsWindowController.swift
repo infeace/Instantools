@@ -5,7 +5,7 @@ import SwiftUI
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let makeModel: () -> SettingsModel
-    private var window: NSWindow?
+    private(set) var window: NSWindow?
     private var model: SettingsModel?
 
     var isOpen: Bool { window != nil }
@@ -55,6 +55,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         model?.stop()
         model?.configStore.flush()
+        model?.snapStore.flush()
         model = nil
         DispatchQueue.main.async { [weak self] in
             MainActor.assumeIsolated {

@@ -3,17 +3,21 @@ import AppSwitcherCore
 import AppSwitcherKit
 import InstantoolsCore
 import InstantoolsKit
+import WindowSnapperCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let configStore = ConfigStore()
+    /// Starts out as Rectangle's settings when Rectangle has any.
+    private let snapStore = ConfigFileStore<SnapConfig>(initial: { SnapSystem.initialConfig() })
     private let displays = Displays()
     private let supervisor = ToolSupervisor()
     private let layouts = KeyboardLayoutWatcher()
+    private let systemSettingsReturn = SystemSettingsReturn()
     private var statusItem: NSStatusItem?
     private lazy var settings = SettingsWindowController(
         makeModel: { [unowned self] in
-            SettingsModel(configStore: configStore, actions: .init(
+            SettingsModel(configStore: configStore, snapStore: snapStore, actions: .init(
                 toolState: { [unowned self] tool in supervisor.state(tool) },
                 isEnabled: { tool in HostPreferences.isEnabled(tool) },
                 setEnabled: { [unowned self] tool, enabled in setEnabled(tool, enabled) },
@@ -21,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 requestStatus: { [unowned self] in supervisor.requestStatus() },
                 appSwitcher: { [unowned self] in supervisor.appSwitcherStatus },
                 layoutSwitcher: { [unowned self] in supervisor.layoutSwitcherStatus },
+                windowSnapper: { [unowned self] in supervisor.windowSnapperStatus },
                 layouts: { [unowned self] in layouts.layouts },
                 currentLayout: { [unowned self] in layouts.currentId },
                 selectLayout: { [unowned self] id in layouts.select(id) },
@@ -39,7 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 setEnabled: { [unowned self] tool, enabled in setEnabled(tool, enabled) },
                 permissions: { PermissionState(accessibility: Permissions.accessibility, inputMonitoring: Permissions.inputMonitoring) },
                 setStartAtLogin: { enabled in try LoginItem.setEnabled(enabled) },
-                openSettings: { [unowned self] in settings.show() }
+                openSettings: { [unowned self] in settings.show() },
+                snapConfig: { [unowned self] in snapStore.config }
             ))
         }
     )
@@ -56,8 +62,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // leftover InstantTab that may have had to be killed. Otherwise the setting may be another switcher's.
         supervisor.recoverNativeSwitcher(stoppedLeftoverSwitcher: LeftoverProcesses.stop())
         displays.start()
-        // Creates the Cmd+Tab config with defaults when missing, before the tool that reads it starts.
+        // Creates missing config files, before the tools that read them start.
         configStore.start()
+        snapStore.start()
         LoginItem.repairIfMoved()
         NSApp.mainMenu = makeMainMenu()
         statusItem = makeStatusItem()
@@ -65,6 +72,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         supervisor.onChange = { [weak self] in self?.settings.refresh() }
         layouts.onChange = { [weak self] in self?.settings.refresh() }
         layouts.start()
+        systemSettingsReturn.onReturn = { [weak self] in
+            guard let self else { return }
+            // The one the user was in is in front of the other.
+            let front = NSApp.orderedWindows.first { $0 === self.welcome.window || $0 === self.settings.window }
+            if front == nil { return }
+            if front === welcome.window { welcome.show() } else { settings.show() }
+        }
+        systemSettingsReturn.start()
         for tool in ToolId.allCases where HostPreferences.isEnabled(tool) {
             supervisor.start(tool)
         }
@@ -77,6 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         configStore.flush()
+        snapStore.flush()
         supervisor.stopAllAndWait()
     }
 
@@ -90,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         TerminationSignals.handle { [weak self] in
             if let self {
                 configStore.flush()
+                snapStore.flush()
                 if settings.isOpen { Handoff.markSettingsOpen() }
                 supervisor.stopAllAndWait()
             }
@@ -135,7 +152,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let state = supervisor.state(tool)
             let active = ToolCondition.isActive(
                 tool, state: state, handlesCmdTab: supervisor.appSwitcherStatus?.handlesCmdTab,
-                tapRunning: supervisor.layoutSwitcherStatus?.tapRunning, inputMonitoring: inputMonitoring
+                tapRunning: supervisor.layoutSwitcherStatus?.tapRunning,
+                snapAccessibility: supervisor.windowSnapperStatus?.accessibility, inputMonitoring: inputMonitoring
             )
             let row = toolItem(tool, condition: ToolCondition(enabled: enabled, state: state, isActive: active))
             row.state = enabled && state == .running ? .on : .off
@@ -159,21 +177,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     choice.indentationLevel = 1
                     menu.addItem(choice)
                 }
+            case .windowSnapper:
+                break
             }
         }
 
         var fixes: [NSMenuItem] = []
         let running = { (tool: ToolId) in [.running, .starting].contains(self.supervisor.state(tool)) }
         let accessibility = Permissions.accessibility
-        if running(.appSwitcher), !accessibility {
+        if running(.appSwitcher) || running(.windowSnapper), !accessibility {
             fixes.append(item("Grant Accessibility…", #selector(openAccessibility), target: self))
         }
-        // Cmd+Tab's taps need it too, but without Accessibility they are off anyway.
+        // Cmd+Tab's taps need it too, but without Accessibility they are off anyway. InstantSnap needs only
+        // Accessibility.
         if running(.layoutSwitcher) || (running(.appSwitcher) && accessibility), !inputMonitoring() {
             fixes.append(item("Grant Input Monitoring…", #selector(openInputMonitoring), target: self))
         }
         if let error = configStore.error {
-            fixes.append(item("Config error: \(error)", #selector(openSettings), target: self))
+            fixes.append(item("InstantTab config error: \(error)", #selector(openSettings), target: self))
+        }
+        if let error = snapStore.error {
+            fixes.append(item("InstantSnap config error: \(error)", #selector(openSettings), target: self))
         }
         if !fixes.isEmpty {
             menu.addItem(.separator())

@@ -120,23 +120,31 @@ private struct ChordPicture: View {
 struct KeyCap: View {
     let symbol: String
     let name: String
+    /// Only the symbol, for where several tools' keys share a row.
+    var small = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.compactLayout) private var compact
 
     var body: some View {
         let dark = colorScheme == .dark
-        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Spacer()
-                Text(symbol).font(.system(size: 20, weight: .medium))
+        let shape = RoundedRectangle(cornerRadius: small ? 9 : 12, style: .continuous)
+        Group {
+            if small {
+                Text(symbol).font(.system(size: 18, weight: .medium))
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Spacer()
+                        Text(symbol).font(.system(size: 20, weight: .medium))
+                    }
+                    Spacer(minLength: 0)
+                    Text(name).font(.system(size: 13, weight: .medium))
+                }
+                .padding(10)
             }
-            Spacer(minLength: 0)
-            Text(name).font(.system(size: 13, weight: .medium))
         }
         .foregroundStyle(dark ? Color.white : Color(white: 0.2))
-        .padding(10)
-        .frame(width: compact ? 86 : 96, height: compact ? 62 : 72)
+        .frame(width: small ? 40 : compact ? 86 : 96, height: small ? 40 : compact ? 62 : 72)
         .background(
             shape.fill(dark ? Color(white: 0.2) : Color(white: 0.98))
                 .shadow(color: .black.opacity(0.25), radius: 0, y: 3)

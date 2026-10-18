@@ -10,6 +10,7 @@ bundle_id="com.infeace.Instantools"
 tools=(
     "AppSwitcher InstantoolsAppSwitcher $bundle_id.AppSwitcher"
     "LayoutSwitcher InstantoolsLayoutSwitcher $bundle_id.LayoutSwitcher"
+    "WindowSnapper InstantoolsWindowSnapper $bundle_id.WindowSnapper"
 )
 process_names=(Instantools)
 for tool in "${tools[@]}"; do
@@ -98,7 +99,7 @@ for tool in "${tools[@]}"; do
     cp "$bin_dir/$product" "$app/Contents/Helpers/$helper"
 done
 cp Resources/Info.plist "$app/Contents/Info.plist"
-cp Resources/AppIcon.icns Resources/InstantTab.png Resources/InstantLang.png "$app/Contents/Resources/"
+cp Resources/AppIcon.icns Resources/InstantTab.png Resources/InstantLang.png Resources/InstantSnap.png "$app/Contents/Resources/"
 build_number="$(git rev-list --count HEAD 2>/dev/null || echo 0)"
 plutil -replace CFBundleVersion -string "$build_number" "$app/Contents/Info.plist"
 

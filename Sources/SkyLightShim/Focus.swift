@@ -69,7 +69,8 @@ extension SkyLight {
         }
     }
 
-    private static func windowId(of element: AXUIElement) -> CGWindowID? {
+    /// The WindowServer id of an AX window, nil when the private call is missing or fails.
+    public static func windowId(of element: AXUIElement) -> CGWindowID? {
         guard let axUIElementGetWindow else { return nil }
         var id: CGWindowID = 0
         return axUIElementGetWindow(element, &id) == .success ? id : nil

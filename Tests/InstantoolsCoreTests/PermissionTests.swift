@@ -29,6 +29,22 @@ struct PermissionTests {
         #expect(inputMonitoringOnly.missing(for: .layoutSwitcher).isEmpty)
     }
 
+    @Test func snapLacksOnlyAccessibility() {
+        #expect(none.missing(for: .windowSnapper) == [.accessibility])
+        #expect(inputMonitoringOnly.missing(for: .windowSnapper) == [.accessibility])
+        #expect(switchedOff.missing(for: .windowSnapper).isEmpty)
+        #expect(accessibility.missing(for: .windowSnapper).isEmpty)
+    }
+
+    @Test func snapExplainsAccessibilityUnlessCmdTabDoes() {
+        #expect(none.needed(by: [.windowSnapper]) == [PermissionNeed(.accessibility, for: .windowSnapper)])
+        #expect(accessibility.needed(by: [.windowSnapper]) == [PermissionNeed(.accessibility, for: .windowSnapper)])
+        #expect(none.needed(by: [.appSwitcher, .windowSnapper]) == [PermissionNeed(.accessibility, for: .appSwitcher)])
+        #expect(none.needed(by: [.layoutSwitcher, .windowSnapper]) == [
+            PermissionNeed(.accessibility, for: .windowSnapper), PermissionNeed(.inputMonitoring, for: .layoutSwitcher),
+        ])
+    }
+
     @Test func noToolNeedsNothing() {
         for state in [none, accessibility, inputMonitoringOnly, switchedOff] {
             #expect(state.needed(by: []).isEmpty)
@@ -73,7 +89,7 @@ struct PermissionTests {
 
 struct WelcomeStepTests {
     @Test func goesThroughEveryStepWithAToolChosen() {
-        for tools: Set<ToolId> in [[.appSwitcher], [.layoutSwitcher], [.appSwitcher, .layoutSwitcher]] {
+        for tools: Set<ToolId> in [[.appSwitcher], [.layoutSwitcher], [.windowSnapper], Set(ToolId.allCases)] {
             #expect(WelcomeStep.tools.next(choosing: tools) == .permissions)
             #expect(WelcomeStep.permissions.next(choosing: tools) == .done)
             #expect(WelcomeStep.done.next(choosing: tools) == nil)

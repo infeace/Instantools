@@ -2,8 +2,10 @@ import AppKit
 import AppSwitcherCore
 import AppSwitcherKit
 import InstantoolsCore
+import InstantoolsKit
 import Observation
 import SwiftUI
+import WindowSnapperCore
 
 @MainActor
 @Observable
@@ -19,6 +21,7 @@ final class SettingsModel {
         var requestStatus: () -> Void
         var appSwitcher: () -> AppSwitcherStatus?
         var layoutSwitcher: () -> LayoutSwitcherStatus?
+        var windowSnapper: () -> WindowSnapperStatus?
         var layouts: () -> [KeyboardLayout]
         var currentLayout: () -> String?
         var selectLayout: (String) -> Void
@@ -39,6 +42,7 @@ final class SettingsModel {
     }
 
     let configStore: ConfigStore
+    let snapStore: ConfigFileStore<SnapConfig>
     private(set) var toolStates: [ToolId: ToolState] = [:]
     private(set) var enabledTools: Set<ToolId> = []
     private(set) var accessibilityGranted = false
@@ -62,19 +66,29 @@ final class SettingsModel {
     private(set) var currentLayout: String?
     /// Nil until the Language tool has replied.
     private(set) var layoutTapRunning: Bool?
+    /// Nil until InstantSnap has replied.
+    private(set) var snapAccessibility: Bool?
+    /// In snap.json5's form, such as ctrl+opt+left.
+    private(set) var unavailableSnapShortcuts: [String] = []
+    private(set) var macTilingIsOn = false
+    private(set) var rectangleIsRunning = false
 
     @ObservationIgnored let apps = AppLookup()
     @ObservationIgnored private let actions: Actions
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private let altTabRules: [Config.Exclusion]
+    /// Rectangle's settings as InstantSnap's, nil when Rectangle has none.
+    @ObservationIgnored private let rectangleConfig: SnapConfig?
     @ObservationIgnored private var previewEntries: [AppSwitcherStatus.RecentApp] = []
     @ObservationIgnored private var resolved: (groups: [DisplayGroup], displays: [Display], value: ResolvedGroups)?
 
-    init(configStore: ConfigStore, actions: Actions) {
+    init(configStore: ConfigStore, snapStore: ConfigFileStore<SnapConfig>, actions: Actions) {
         self.configStore = configStore
+        self.snapStore = snapStore
         self.actions = actions
         altTabRules = UserDefaults(suiteName: "com.lwouis.alt-tab-macos")?.string(forKey: "exceptions")
             .map(AltTabImport.exclusions(fromExceptionsJSON:)) ?? []
+        rectangleConfig = SnapSystem.rectangleConfig()
         refreshSystemState()
         refresh()
     }
@@ -114,6 +128,12 @@ final class SettingsModel {
         set(\.focusedDisplay, switcher?.focusedDisplay)
         set(\.handlesCmdTab, switcher?.handlesCmdTab)
         set(\.layoutTapRunning, actions.layoutSwitcher()?.tapRunning)
+        // Unlike Input Monitoring's, this check is quick, so callouts follow System Settings live.
+        set(\.accessibilityGranted, actions.accessibilityGranted())
+        let snapper = actions.windowSnapper()
+        set(\.snapAccessibility, snapper?.accessibility)
+        set(\.unavailableSnapShortcuts, snapper?.unavailableShortcuts ?? [])
+        set(\.rectangleIsRunning, SnapSystem.rectangleIsRunning)
         set(\.layouts, actions.layouts())
         set(\.currentLayout, actions.currentLayout())
         set(\.displays, actions.displays())
@@ -138,8 +158,8 @@ final class SettingsModel {
 
     /// Changed only in System Settings, and the login check is IPC, so this runs when the window becomes key.
     func refreshSystemState() {
-        set(\.accessibilityGranted, actions.accessibilityGranted())
         set(\.inputMonitoringGranted, actions.inputMonitoringGranted())
+        set(\.macTilingIsOn, SnapSystem.macTilingIsOn)
         set(\.loginEnabled, LoginItem.isEnabled)
         set(\.loginBlocked, LoginItem.isBlockedInLoginItems)
     }
@@ -153,6 +173,34 @@ final class SettingsModel {
             get: { self.configStore.config[keyPath: keyPath] },
             set: { value in self.configStore.update { $0[keyPath: keyPath] = value } }
         )
+    }
+
+    func snapBinding<Value: Equatable>(_ keyPath: WritableKeyPath<SnapConfig, Value>) -> Binding<Value> {
+        Binding(
+            get: { self.snapStore.config[keyPath: keyPath] },
+            set: { value in self.snapStore.update { $0[keyPath: keyPath] = value } }
+        )
+    }
+
+    /// Rectangle's shortcuts, gaps and what pressing a half again does, when taking them would change something.
+    var rectangleSettingsToImport: SnapConfig? {
+        rectangleConfig.map(importing).flatMap { $0 == snapStore.config ? nil : $0 }
+    }
+
+    func importRectangle() {
+        guard let imported = rectangleSettingsToImport else { return }
+        snapStore.update { $0 = imported }
+    }
+
+    /// Dragging is left as it is: the import row says what it takes, and that is not among it.
+    private func importing(_ rectangle: SnapConfig) -> SnapConfig {
+        var config = rectangle
+        config.dragToSnap = snapStore.config.dragToSnap
+        return config
+    }
+
+    func quitRectangle() {
+        SnapSystem.quitRectangle()
     }
 
     func state(of tool: ToolId) -> ToolState {
@@ -178,7 +226,7 @@ final class SettingsModel {
     func isActive(_ tool: ToolId) -> Bool {
         ToolCondition.isActive(
             tool, state: state(of: tool), handlesCmdTab: handlesCmdTab, tapRunning: layoutTapRunning,
-            inputMonitoring: { inputMonitoringGranted }
+            snapAccessibility: snapAccessibility, inputMonitoring: { inputMonitoringGranted }
         )
     }
 

@@ -66,7 +66,7 @@ enum FirstLaunch {
     private static func copyOldConfig() -> Bool {
         do {
             let data = try Data(contentsOf: oldConfigURL)
-            try FileManager.default.createDirectory(at: ConfigStore.directory, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: ConfigFolder.directory, withIntermediateDirectories: true)
             try data.write(to: ConfigStore.writeTarget(for: ConfigStore.fileURL), options: .atomic)
             return true
         } catch {

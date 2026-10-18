@@ -41,6 +41,11 @@ struct MessageTests {
         #expect(try roundTrip(message) == message)
     }
 
+    @Test func windowSnapperStatusRoundTrips() throws {
+        let message = ToolMessage(windowSnapper: WindowSnapperStatus(accessibility: true, unavailableShortcuts: ["ctrl+opt+left"]))
+        #expect(try roundTrip(message) == message)
+    }
+
     @Test func layoutsFromAnOlderToolAreIgnored() {
         let line = Array(#"{"layoutSwitcher":{"tapRunning":true,"layouts":["ABC"]}}"#.utf8)
         #expect(MessageCoding.decode(ToolMessage.self, from: line) == ToolMessage(layoutSwitcher: LayoutSwitcherStatus(tapRunning: true)))

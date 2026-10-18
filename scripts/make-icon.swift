@@ -1,5 +1,6 @@
 // Draws the Instantools app icon into Resources/AppIcon.icns and Resources/AppIcon.png, and each tool's icon
-// into Resources/InstantTab.png and Resources/InstantLang.png, which Settings and the menu show.
+// into Resources/InstantTab.png, Resources/InstantLang.png and Resources/InstantSnap.png, which Settings and
+// the menu show.
 // Run with: swift scripts/make-icon.swift
 import AppKit
 
@@ -140,6 +141,14 @@ let instantLang = (palette: Palette(top: (0.22, 0.84, 0.80), bottom: (0.05, 0.47
     canvas.gradientBolt(center: CGPoint(x: front.midX + 4, y: front.midY), size: 0.9)
 })
 
+/// Two windows side by side, as a snap leaves them, the bolt in the front one.
+let instantSnap = (palette: Palette(top: (1.0, 0.70, 0.24), bottom: (0.93, 0.40, 0.10)), content: { (canvas: Canvas) in
+    canvas.fill(rounded(CGRect(x: 226, y: 300, width: 272, height: 424), 54), white: 0.38)
+    let front = CGRect(x: 526, y: 300, width: 272, height: 424)
+    canvas.fill(rounded(front, 54), white: 1, shadow: true)
+    canvas.gradientBolt(center: CGPoint(x: front.midX, y: front.midY), size: 0.9)
+})
+
 func writePNG(_ rep: NSBitmapImageRep, to url: URL) throws {
     try rep.representation(using: .png, properties: [:])!.write(to: url)
 }
@@ -156,7 +165,7 @@ for points in [16, 32, 128, 256, 512] {
 }
 try writePNG(drawIcon(size: 1024, palette: instantools.palette, content: instantools.content), to: resources.appending(path: "AppIcon.png"))
 // 512 pixels covers the largest place a tool's icon is drawn, at 2x.
-for (name, icon) in [("InstantTab", instantTab), ("InstantLang", instantLang)] {
+for (name, icon) in [("InstantTab", instantTab), ("InstantLang", instantLang), ("InstantSnap", instantSnap)] {
     try writePNG(drawIcon(size: 512, palette: icon.palette, content: icon.content), to: resources.appending(path: "\(name).png"))
 }
 
@@ -169,4 +178,4 @@ guard iconutil.terminationStatus == 0 else {
     print("iconutil failed")
     exit(iconutil.terminationStatus)
 }
-print("wrote Resources/AppIcon.icns, AppIcon.png, InstantTab.png and InstantLang.png")
+print("wrote Resources/AppIcon.icns, AppIcon.png, InstantTab.png, InstantLang.png and InstantSnap.png")

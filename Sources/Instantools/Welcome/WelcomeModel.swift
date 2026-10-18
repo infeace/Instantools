@@ -2,6 +2,7 @@ import Foundation
 import InstantoolsCore
 import InstantoolsKit
 import Observation
+import WindowSnapperCore
 
 /// Choosing the tools applies them on Continue, the way Settings' switches do, and Start at login applies on
 /// finishing, so closing the window early keeps only what was applied so far.
@@ -15,6 +16,7 @@ final class WelcomeModel {
         var permissions: @Sendable () -> PermissionState
         var setStartAtLogin: (Bool) throws -> Void
         var openSettings: () -> Void
+        var snapConfig: () -> SnapConfig
     }
 
     private(set) var step: WelcomeStep {
@@ -40,6 +42,11 @@ final class WelcomeModel {
         self.step = step
         checkPermissions()
         updatePolling()
+    }
+
+    /// For trying InstantSnap with the keys it really has, which may have come from Rectangle.
+    var snapConfig: SnapConfig {
+        actions.snapConfig()
     }
 
     var needs: [PermissionNeed] {

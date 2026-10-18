@@ -1,5 +1,5 @@
-import AppSwitcherKit
 import InstantoolsCore
+import InstantoolsKit
 import SwiftUI
 
 struct GeneralPane: View {
@@ -29,7 +29,7 @@ struct GeneralPane: View {
                     ToolCard(tool: tool, model: model, stacked: stacked) { open(tool.panes[0]) }
                 }
             }
-            // Side by side, both cards take the height of the taller one.
+            // Side by side, the cards take the height of the tallest one.
             .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -57,8 +57,8 @@ struct GeneralPane: View {
 
     private var configuration: some View {
         SettingsCard(title: "Configuration") {
-            SettingsRow(title: "Settings folder", subtitle: "\(ConfigStore.directory.abbreviatedPath), kept in sync with this window.") {
-                Button("Show in Finder") { ConfigStore.revealDirectory() }
+            SettingsRow(title: "Settings folder", subtitle: "\(ConfigFolder.directory.abbreviatedPath), kept in sync with this window.") {
+                Button("Show in Finder") { ConfigFolder.reveal() }
                     .glassButton()
             }
         }

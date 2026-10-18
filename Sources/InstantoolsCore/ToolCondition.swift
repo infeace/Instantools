@@ -4,7 +4,8 @@ public enum ToolCondition: Equatable, Sendable {
     case starting
     /// Running and doing its job.
     case active
-    /// Running without doing its job: macOS kept Cmd+Tab, or Language cannot see keys.
+    /// Running without doing its job: macOS kept Cmd+Tab, Language cannot see keys, or InstantSnap cannot
+    /// move windows.
     case inactive
     case failed(String)
 
@@ -24,12 +25,14 @@ public enum ToolCondition: Equatable, Sendable {
     /// Monitoring check out of its status, since the check takes about 10 ms on its run loop, so the caller
     /// makes it, and it is made only when it decides the answer.
     public static func isActive(
-        _ tool: ToolId, state: ToolState, handlesCmdTab: Bool?, tapRunning: Bool?, inputMonitoring: () -> Bool
+        _ tool: ToolId, state: ToolState, handlesCmdTab: Bool?, tapRunning: Bool?, snapAccessibility: Bool?,
+        inputMonitoring: () -> Bool
     ) -> Bool {
         guard state == .running else { return false }
         return switch tool {
         case .appSwitcher: handlesCmdTab != false
         case .layoutSwitcher: tapRunning != false && inputMonitoring()
+        case .windowSnapper: snapAccessibility != false
         }
     }
 }

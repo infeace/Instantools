@@ -1,5 +1,5 @@
-import AppSwitcherKit
 import InstantoolsCore
+import InstantoolsKit
 import SwiftUI
 
 struct AboutPane: View {
@@ -27,7 +27,7 @@ struct AboutPane: View {
                         Label("View on GitHub", systemImage: "arrow.up.right.square")
                     }
                     Button {
-                        ConfigStore.revealDirectory()
+                        ConfigFolder.reveal()
                     } label: {
                         Label("Show Settings Folder", systemImage: "folder")
                     }

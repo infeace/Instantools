@@ -2,8 +2,10 @@ import AppKit
 import AppSwitcherCore
 import AppSwitcherKit
 import InstantoolsCore
+import InstantoolsKit
 import SkyLightShim
 import SwiftUI
+import WindowSnapperCore
 
 /// Renders a Settings pane or a welcome step to a PNG and exits. It starts no tool, runs no migration, writes
 /// no config and never touches Cmd+Tab. Capturing its own window needs no Screen Recording permission.
@@ -42,7 +44,8 @@ enum SettingsSnapshot {
                 setEnabled: { _, _ in },
                 permissions: { PermissionState(accessibility: access, inputMonitoring: inputMonitoring) },
                 setStartAtLogin: { _ in },
-                openSettings: {}
+                openSettings: {},
+                snapConfig: { SnapConfig() }
             ), step: welcomeStep)
             capture(WelcomeWindowController.makeWindow(model: model), to: output)
         }
@@ -79,6 +82,16 @@ enum SettingsSnapshot {
             handlesCmdTab: true
         )
         let layout = LayoutSwitcherStatus(tapRunning: true)
+        let snapStore = ConfigFileStore<SnapConfig>(persists: false)
+        snapStore.load()
+        if sample {
+            snapStore.update {
+                $0.gap = 8
+                $0.repeatMode = .nextDisplay
+                $0.setShortcut(Shortcut("ctrl+opt+s"), for: .maximize)
+            }
+        }
+        let snapper = WindowSnapperStatus(accessibility: access, unavailableShortcuts: [])
         // This Mac's own, since reading them changes nothing, except with --sample, which shows nothing personal.
         let layouts = KeyboardLayoutWatcher()
         layouts.start()
@@ -86,7 +99,7 @@ enum SettingsSnapshot {
             KeyboardLayout(id: "com.apple.keylayout.ABC", name: "ABC", icon: nil, badge: "EN"),
             KeyboardLayout(id: "com.apple.keylayout.German", name: "German", icon: nil, badge: "DE"),
         ]
-        let model = SettingsModel(configStore: store, actions: .init(
+        let model = SettingsModel(configStore: store, snapStore: snapStore, actions: .init(
             toolState: { _ in sample ? .running : .off },
             isEnabled: { _ in sample },
             setEnabled: { _, _ in },
@@ -94,6 +107,7 @@ enum SettingsSnapshot {
             requestStatus: {},
             appSwitcher: { sample ? switcher : nil },
             layoutSwitcher: { sample ? layout : nil },
+            windowSnapper: { sample ? snapper : nil },
             layouts: { sample ? sampleLayouts : layouts.layouts },
             currentLayout: { sample ? sampleLayouts[0].id : layouts.currentId },
             selectLayout: { _ in },

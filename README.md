@@ -19,14 +19,15 @@
   <img src="docs/images/settings.png" width="760" alt="Instantools settings">
 </p>
 
-Instantools is one menu bar app with two tools. Turn on only the ones you want:
+Instantools is one menu bar app with three tools. Turn on only the ones you want:
 
 | | Tool | What it does |
 |---|---|---|
 | <img src="Resources/InstantTab.png" width="48" alt=""> | **InstantTab** | An app switcher that appears the moment you press Cmd+Tab |
 | <img src="Resources/InstantLang.png" width="48" alt=""> | **InstantLang** | Switches the keyboard layout with Control+Command, pressed in either order |
+| <img src="Resources/InstantSnap.png" width="48" alt=""> | **InstantSnap** | Snaps windows into place with a shortcut, or by dragging them to an edge of the screen |
 
-Both come with one Settings window, one login item and one set of permissions. Each tool runs in its own process, so one never slows or stops another. Instantools succeeds the standalone InstantTab and InstantLang apps, and takes over from them on its first launch.
+They share one Settings window, one login item and one set of permissions. Each tool runs in its own process, so one never slows or stops another. Instantools succeeds the standalone InstantTab and InstantLang apps, and takes over from them on its first launch.
 
 ## InstantTab
 
@@ -65,6 +66,19 @@ Switch the keyboard layout the moment Control and Command are both down.
 
 Settings > Layouts shows your layouts live, with the current one marked, and switches to any of them with a click. Every switch is checked against what macOS reports straight after, and retried once if it did not take. To use Caps Lock as Control, set it in System Settings > Keyboard > Keyboard Shortcuts > Modifier Keys. Remove any other switcher bound to the same chord, such as a Karabiner rule: two switchers on one chord cancel out.
 
+## InstantSnap
+
+Window snapping that lands the moment you ask, with nothing animating in between.
+
+- **Rectangle's shortcuts.** Control+Option and an arrow for halves, U, I, J and K for quarters, D, F and G for thirds, E and T for two thirds, Return for full screen, C to center, Delete to restore, and Control+Option+Command and an arrow for the next monitor. On first launch it takes over Rectangle's own settings, if you have any: its shortcuts, Spectacle set included, gaps, what pressing a half again does, and snapping by drag if you turned it off.
+- **Drag to an edge.** Drag a window by its title bar to an edge or a corner, and a preview shows where it will land. Left and right edges take halves, the top fills the screen, the bottom takes a third and the corners take quarters. Portrait monitors take halves at the top and bottom and thirds at the sides.
+- **Back to its size.** Drag a snapped window away and it gets its old size back. Restore puts it back where it was.
+- **Across monitors.** A snapped window takes the same place on the next monitor, so a half stays a half. Any other window keeps its size.
+- **Again.** Pressing a half again moves the window on to the next monitor that way, cycles it through a half, two thirds and one third, or does nothing, as you choose.
+- **Gaps.** Optional space between snapped windows and around them.
+
+Quit Rectangle first, and turn off macOS's own tiling in System Settings > Desktop & Dock: Drag windows to screen edges to tile, and Drag windows to menu bar to fill screen. Settings > Snapping reminds you of both, and marks any shortcut another app still has. Shortcuts are listed in Settings > Shortcuts and changed in `~/.config/instantools/snap.json5`.
+
 ## Menu bar
 
 The bolt in the menu bar lists each tool with its status, and clicking a tool turns it on or off. InstantTab shows its typical speed, and InstantLang lists your layouts, so you can switch from there too. A way to fix a missing permission or a broken settings file appears only when something needs it.
@@ -101,7 +115,7 @@ security delete-identity -t -c "Instantools Local Signing"
 
 Each tool runs as part of Instantools, so macOS asks once and lists only Instantools in Privacy & Security.
 
-- **Accessibility** covers both tools. InstantTab works without it, but the keys inside the switcher and raising the right window need it.
+- **Accessibility** covers every tool. InstantTab works without it, but the keys inside the switcher and raising the right window need it. InstantSnap needs it to move other apps' windows.
 - **Input Monitoring** is all InstantLang needs when you use it without InstantTab. With Accessibility allowed it is not needed, unless Input Monitoring is switched off for Instantools: that stops InstantLang and the keys inside the switcher even with Accessibility.
 
 Each tool's card in Settings > General shows the permissions it is missing right now, each with a button to allow it, and the sidebar marks a tool that needs attention in orange.
@@ -113,13 +127,14 @@ Accessibility and Input Monitoring are the same access a keylogger needs, so thi
 - **No network.** Nothing in the app opens a connection. The GitHub button in About opens the page in your browser.
 - **Keys are never stored or logged.** InstantLang listens only to modifier keys (Control, Command, Shift, Option, Fn), never to the keys you type. InstantTab sees other keys only while its switcher is open and only with Cmd held, and acts on them there.
 - **What is kept.** Your settings in `~/.config/instantools` and the app's preferences. Logs go to the macOS log under `com.infeace.Instantools` and hold status only, such as tool starts, your layout list and switch timings.
-- **Check it yourself.** The event taps are in `Sources/LayoutSwitcher/ChordTap.swift` and `Sources/AppSwitcher/InputTaps.swift`, and the Cmd+Tab hotkey in `Sources/AppSwitcher/HotKeys.swift`.
+- **Mouse.** InstantSnap watches the left mouse button to tell when a window is dragged, and keeps nothing of it.
+- **Check it yourself.** The event taps are in `Sources/LayoutSwitcher/ChordTap.swift` and `Sources/AppSwitcher/InputTaps.swift`, the hotkeys in `Sources/AppSwitcher/HotKeys.swift` and `Sources/WindowSnapper/SnapHotKeys.swift`, and the mouse watch in `Sources/WindowSnapper/DragSnapper.swift`.
 
 To report a security problem, see [SECURITY.md](SECURITY.md).
 
 ## Configure
 
-Settings and `~/.config/instantools/cmd-tab.json5` stay in sync, so edit whichever you prefer. The file documents every option, and an edit you save while Settings is open wins over a change still waiting to be written.
+Settings and the files in `~/.config/instantools` stay in sync, so edit whichever you prefer: `cmd-tab.json5` for InstantTab and `snap.json5` for InstantSnap. Each file documents every option, and an edit you save while Settings is open wins over a change still waiting to be written.
 
 ```json5
 {
@@ -135,12 +150,21 @@ Settings and `~/.config/instantools/cmd-tab.json5` stay in sync, so edit whichev
 }
 ```
 
+```json5
+{
+  dragToSnap: true,
+  gap: 8,
+  repeat: "nextDisplay",
+  shortcuts: { maximize: "ctrl+opt+s", center: "" },
+}
+```
+
 ## How it works
 
 Instantools is one host process plus one process per tool.
 
-- **The host** owns the menu bar, Settings, the welcome window, Start at login and the settings file. It starts each enabled tool from `Contents/Helpers` and talks to it over its stdin and stdout, one JSON message per line, only to show live status and to check that it still answers.
-- **Each tool** does its whole job inside its own process: pressing Cmd+Tab or Control+Command does no IPC and never waits on anything.
+- **The host** owns the menu bar, Settings, the welcome window, Start at login and the settings files. It starts each enabled tool from `Contents/Helpers` and talks to it over its stdin and stdout, one JSON message per line, only to show live status and to check that it still answers.
+- **Each tool** does its whole job inside its own process: pressing Cmd+Tab or Control+Command does no IPC and never waits on anything. InstantSnap's window moves are Accessibility calls into the app that owns the window, on a queue of their own, so a busy app never holds up its shortcuts or the mouse.
 - **Supervision.** A tool that exits unexpectedly restarts at once, then after 1 and 5 seconds. A tool that hangs is stopped and counts as one of those exits: the host pings each tool every 2 seconds, and stops one that misses 3 pings in a row or is not ready 12 seconds after it starts. After 5 exits within a minute it stays down and Settings offers to try again. If the host itself crashes, the tools keep working for 15 seconds, long enough for the login agent to bring the host back.
 - **Safe exits.** InstantTab restores native Cmd+Tab on every way out. The host also remembers whether InstantTab may have left it off, and restores it after any exit it did not ask for, at quit, and at the next launch after a crash. When InstantTab is off, Instantools leaves native Cmd+Tab alone, so another switcher keeps its setup.
 
@@ -159,7 +183,7 @@ Settings panes and the welcome steps render to PNG without Screen Recording perm
 build/Instantools.app/Contents/MacOS/Instantools --snapshot-settings switcher out.png dark --sample --height 900
 ```
 
-Panes are `general`, `switcher`, `keys`, `monitors`, `exclusions`, `language` (the Layouts pane), `about`, `group-editor`, `welcome-tools`, `welcome-permissions` and `welcome-done`. Add `--narrow` for the narrowest window, and `--no-access` or `--input-monitoring-off` for the permission states.
+Panes are `general`, `switcher`, `keys`, `monitors`, `exclusions`, `language` (the Layouts pane), `snapping`, `snapShortcuts`, `about`, `group-editor`, `welcome-tools`, `welcome-permissions` and `welcome-done`. Add `--narrow` for the narrowest window, and `--no-access` or `--input-monitoring-off` for the permission states.
 
 | Path | What |
 |---|---|
@@ -171,6 +195,8 @@ Panes are `general`, `switcher`, `keys`, `monitors`, `exclusions`, `language` (t
 | `Sources/AppSwitcherKit` | What Settings shares with it: config store, displays, native Cmd+Tab, panel style |
 | `Sources/LayoutSwitcher` | InstantLang: event tap and input sources |
 | `Sources/LayoutSwitcherCore` | Its pure logic: chord detection and layout choice. Unit tested |
+| `Sources/WindowSnapper` | InstantSnap: hotkeys, window moves, drag watch, preview |
+| `Sources/WindowSnapperCore` | Its pure logic: layouts, drag zones, shortcuts, config, Rectangle import. Unit tested |
 | `Sources/SkyLightShim` | The only place private macOS APIs are touched, each with a fallback |
 | `docs/research.md` | Research, measurements and the architecture behind it |
 
@@ -182,12 +208,14 @@ Panes are `general`, `switcher`, `keys`, `monitors`, `exclusions`, `language` (t
 - [x] App Exposé on Up and Down, apps that keep Cmd+Tab
 - [x] One app for InstantTab and InstantLang, each tool in its own process
 - [x] Tool icons, a welcome window, live layouts in Settings and the menu
+- [x] InstantSnap: window snapping by shortcut and by drag, with Rectangle's shortcuts
 - [ ] Replace the standalone InstantTab and InstantLang apps
 - [ ] InstantLang settings: which layouts take part, shortcuts that should not switch, a key per layout
 - [ ] VoiceOver in the switcher
 - [ ] Keyboard navigation in Settings
 - [ ] One entry per window and per-app rules (deferred)
 - [ ] Multiple shortcuts with their own scope (deferred)
+- [ ] InstantSnap: record shortcuts in Settings
 
 ## License
 

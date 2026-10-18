@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import AppSwitcherCore
+import InstantoolsCore
 
 struct PassThroughTests {
     private func parse(_ text: String) throws(ConfigError) -> Config.Parsed {

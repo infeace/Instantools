@@ -9,6 +9,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case monitors
     case exclusions
     case language
+    case snapping
+    case snapShortcuts
     case about
 
     var id: Self { self }
@@ -21,6 +23,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .monitors: "Monitors"
         case .exclusions: "Excluded apps"
         case .language: "Layouts"
+        case .snapping: "Snapping"
+        case .snapShortcuts: "Shortcuts"
         case .about: "About"
         }
     }
@@ -34,6 +38,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .monitors: .monitors
         case .exclusions: .exclusions
         case .language: .language
+        case .snapping: .snapping
+        case .snapShortcuts: .snapShortcuts
         case .about: nil
         }
     }
@@ -59,6 +65,12 @@ struct Tile {
     static let language = Tile(
         symbol: "globe", colors: [Color(red: 0.25, green: 0.8, blue: 0.84), Color(red: 0.05, green: 0.56, blue: 0.68)]
     )
+    static let snapping = Tile(
+        symbol: "rectangle.split.2x1.fill", colors: [Color(red: 1, green: 0.7, blue: 0.22), Color(red: 0.95, green: 0.45, blue: 0.1)]
+    )
+    static let snapShortcuts = Tile(
+        symbol: "arrow.up.left.and.arrow.down.right", colors: [Color(red: 0.98, green: 0.45, blue: 0.7), Color(red: 0.85, green: 0.22, blue: 0.5)]
+    )
 }
 
 extension ToolId {
@@ -67,6 +79,7 @@ extension ToolId {
         switch self {
         case .appSwitcher: [.switcher, .keys, .monitors, .exclusions]
         case .layoutSwitcher: [.language]
+        case .windowSnapper: [.snapping, .snapShortcuts]
         }
     }
 
@@ -75,6 +88,7 @@ extension ToolId {
         switch self {
         case .appSwitcher: .switcher
         case .layoutSwitcher: .language
+        case .windowSnapper: .snapping
         }
     }
 
@@ -82,6 +96,7 @@ extension ToolId {
         switch self {
         case .appSwitcher: "macOS kept Cmd+Tab"
         case .layoutSwitcher: "Needs permission"
+        case .windowSnapper: "Needs Accessibility"
         }
     }
 }
@@ -131,6 +146,8 @@ struct SettingsView: View {
                 case .monitors: MonitorsPane(model: model)
                 case .exclusions: ExclusionsPane(model: model)
                 case .language: LanguagePane(model: model)
+                case .snapping: SnappingPane(model: model)
+                case .snapShortcuts: SnapShortcutsPane(model: model)
                 case .about: AboutPane(model: model)
                 }
             }

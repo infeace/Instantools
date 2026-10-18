@@ -8,7 +8,7 @@ final class WelcomeWindowController: NSObject, NSWindowDelegate {
     static let size = NSSize(width: 640, height: 560)
 
     private let makeModel: () -> WelcomeModel
-    private var window: NSWindow?
+    private(set) var window: NSWindow?
     private var model: WelcomeModel?
 
     var isOpen: Bool { window != nil }

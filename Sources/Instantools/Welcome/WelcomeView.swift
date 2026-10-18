@@ -1,6 +1,7 @@
 import AppKit
 import InstantoolsCore
 import SwiftUI
+import WindowSnapperCore
 
 struct WelcomeView: View {
     let model: WelcomeModel
@@ -193,13 +194,22 @@ private struct ToolChoice: View {
 private struct PermissionsStep: View {
     let model: WelcomeModel
 
+    private var reason: String {
+        let seesKeys = model.isChosen(.appSwitcher) || model.isChosen(.layoutSwitcher)
+        return switch (seesKeys, model.isChosen(.windowSnapper)) {
+        case (true, true): "Your tools need these to see the keys you press and to move windows."
+        case (false, true): "InstantSnap needs this to move other apps' windows."
+        default: "Your tools need these to see the keys you press."
+        }
+    }
+
     var body: some View {
         let needs = model.needs
         let state = model.permissions ?? PermissionState(accessibility: false, inputMonitoring: false)
         VStack(spacing: 0) {
             StepHeader(
                 title: "Allow access",
-                subtitle: "Your tools need these to see the keys you press.\nIn System Settings, they all appear as Instantools."
+                subtitle: "\(reason)\nIn System Settings, they all appear as Instantools."
             ) {
                 IconTile(symbol: "hand.raised.fill", colors: Tile.monitors.colors, size: 64)
             }
@@ -283,12 +293,11 @@ private struct DoneStep: View {
                 IconTile(symbol: "checkmark", colors: Tile.keys.colors, size: 64)
             }
             if !tools.isEmpty {
-                HStack(spacing: 16) {
-                    ForEach(tools) { tool in
-                        TryIt(tool: tool)
-                    }
+                // Three tools' full key caps are wider than the window.
+                ViewThatFits(in: .horizontal) {
+                    tryRow(tools, small: false)
+                    tryRow(tools, small: true)
                 }
-                .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 26)
             }
             VStack(spacing: 0) {
@@ -306,21 +315,32 @@ private struct DoneStep: View {
             .padding(.top, tools.isEmpty ? 28 : 16)
         }
     }
+
+    private func tryRow(_ tools: [ToolId], small: Bool) -> some View {
+        HStack(spacing: 16) {
+            ForEach(tools) { tool in
+                TryIt(tool: tool, snapConfig: model.snapConfig, small: small)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
 }
 
 private struct TryIt: View {
     let tool: ToolId
+    let snapConfig: SnapConfig
+    let small: Bool
 
     var body: some View {
         VStack(spacing: 14) {
-            HStack(spacing: 10) {
+            HStack(spacing: small ? 6 : 10) {
                 ForEach(Array(keys.enumerated()), id: \.offset) { index, key in
                     if index > 0 {
                         Image(systemName: "plus")
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.system(size: small ? 10 : 13, weight: .bold))
                             .foregroundStyle(.secondary)
                     }
-                    KeyCap(symbol: key.symbol, name: key.name)
+                    KeyCap(symbol: key.symbol, name: key.name, small: small)
                 }
             }
             .environment(\.compactLayout, true)
@@ -348,6 +368,7 @@ private struct TryIt: View {
         switch tool {
         case .appSwitcher: [("⌘", "command"), ("⇥", "tab")]
         case .layoutSwitcher: [("⌃", "control"), ("⌘", "command")]
+        case .windowSnapper: snapConfig.shortcut(for: .leftHalf)?.keyCaps.map { ($0.symbol, $0.label) } ?? []
         }
     }
 
@@ -355,6 +376,18 @@ private struct TryIt: View {
         switch tool {
         case .appSwitcher: "Hold Cmd and press Tab"
         case .layoutSwitcher: "Press Control and Command together"
+        case .windowSnapper: snapLine
+        }
+    }
+
+    private var snapLine: String {
+        let shortcut = snapConfig.shortcut(for: .leftHalf)
+        let press = shortcut == SnapAction.leftHalf.defaultShortcut ? "Press Control, Option and an arrow" : "Press these for the left half"
+        return switch (shortcut != nil, snapConfig.dragToSnap) {
+        case (true, true): "\(press), or drag a window to an edge"
+        case (true, false): press
+        case (false, true): "Drag a window to an edge of the screen"
+        case (false, false): "Pick its shortcuts in Settings"
         }
     }
 }

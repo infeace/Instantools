@@ -93,6 +93,10 @@ final class ToolSupervisor {
         runners[.layoutSwitcher]?.latest?.layoutSwitcher
     }
 
+    var windowSnapperStatus: WindowSnapperStatus? {
+        runners[.windowSnapper]?.latest?.windowSnapper
+    }
+
     /// Replies arrive through `onChange`.
     func requestStatus() {
         for runner in runners.values { runner.request(.status) }
@@ -225,7 +229,9 @@ final class ToolRunner {
         var environment = ProcessInfo.processInfo.environment
         environment[ToolLaunch.environmentKey] = "1"
         environment[LoginItem.environmentKey] = nil
-        environment[ToolLaunch.askInputMonitoringKey] = HostPreferences.isEnabled(.appSwitcher) ? "0" : "1"
+        let asksAccessibility = HostPreferences.isEnabled(.appSwitcher) || HostPreferences.isEnabled(.windowSnapper)
+        environment[ToolLaunch.askInputMonitoringKey] = asksAccessibility ? "0" : "1"
+        environment[ToolLaunch.askAccessibilityKey] = HostPreferences.isEnabled(.appSwitcher) ? "0" : "1"
         process.environment = environment
         process.qualityOfService = .userInteractive
         let input = Pipe()

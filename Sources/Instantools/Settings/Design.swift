@@ -439,7 +439,7 @@ extension Permission {
     func reason(for tool: ToolId, _ state: PermissionState) -> String {
         switch (tool, self) {
         case (.appSwitcher, .accessibility):
-            let covers = state.inputMonitoringSwitchedOff ? "" : " It covers InstantLang too."
+            let covers = state.inputMonitoringSwitchedOff ? " It covers InstantSnap too." : " It covers InstantLang and InstantSnap too."
             return "Needed for the keys inside the switcher and to bring the right window forward.\(covers)"
         case (.appSwitcher, .inputMonitoring):
             return "Switched off for Instantools, so the keys inside the switcher do nothing until it is back on."
@@ -447,14 +447,16 @@ extension Permission {
             return state.inputMonitoringSwitchedOff
                 ? "Switched off for Instantools, so InstantLang cannot see Control and Command until it is back on."
                 : "Lets InstantLang see Control and Command. Allowing Accessibility covers it too."
+        case (.windowSnapper, _):
+            return "Needed to move and resize other apps' windows."
         }
     }
 }
 
-/// Shown on the Cmd+Tab panes, for a file that does not parse and for a save that failed. While the file
-/// does not parse their controls are disabled, so only Reset can replace it.
-struct FileProblemBanner: View {
-    let configStore: ConfigStore
+/// Shown on a tool's panes, for a file that does not parse and for a save that failed. While the file does not
+/// parse their controls are disabled, so only Reset can replace it.
+struct FileProblemBanner<File: ConfigFile>: View {
+    let configStore: ConfigFileStore<File>
 
     var body: some View {
         if let error = configStore.error {

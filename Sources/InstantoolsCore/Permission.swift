@@ -40,14 +40,20 @@ public struct PermissionState: Equatable, Sendable {
         switch tool {
         case .appSwitcher: (accessibility ? [] : [.accessibility]) + (inputMonitoringSwitchedOff ? [.inputMonitoring] : [])
         case .layoutSwitcher: inputMonitoring ? [] : [.inputMonitoring]
+        case .windowSnapper: accessibility ? [] : [.accessibility]
         }
     }
 
-    /// What tools being set up need, granted or not, so each can show its status. Input Monitoring is left out
-    /// once Accessibility covers it, and explained by Language, which needs it most.
+    /// What tools being set up need, granted or not, so each can show its status. Accessibility is explained by
+    /// InstantTab when both it and InstantSnap need it. Input Monitoring is left out once Accessibility covers
+    /// it, and explained by Language, which needs it most.
     public func needed(by tools: Set<ToolId>) -> [PermissionNeed] {
         var needs: [PermissionNeed] = []
-        if tools.contains(.appSwitcher) { needs.append(PermissionNeed(.accessibility, for: .appSwitcher)) }
+        if tools.contains(.appSwitcher) {
+            needs.append(PermissionNeed(.accessibility, for: .appSwitcher))
+        } else if tools.contains(.windowSnapper) {
+            needs.append(PermissionNeed(.accessibility, for: .windowSnapper))
+        }
         if tools.contains(.layoutSwitcher), !(accessibility && inputMonitoring) {
             needs.append(PermissionNeed(.inputMonitoring, for: .layoutSwitcher))
         } else if tools.contains(.appSwitcher), inputMonitoringSwitchedOff {

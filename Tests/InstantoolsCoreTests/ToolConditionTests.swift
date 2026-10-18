@@ -24,7 +24,7 @@ struct ToolConditionTests {
 
     @Test func cmdTabIsActiveUnlessMacOSKeptIt() {
         let isActive = { (state: ToolState, handles: Bool?) in
-            ToolCondition.isActive(.appSwitcher, state: state, handlesCmdTab: handles, tapRunning: nil, inputMonitoring: { false })
+            ToolCondition.isActive(.appSwitcher, state: state, handlesCmdTab: handles, tapRunning: nil, snapAccessibility: nil, inputMonitoring: { false })
         }
         #expect(isActive(.running, nil))
         #expect(isActive(.running, true))
@@ -34,7 +34,7 @@ struct ToolConditionTests {
 
     @Test func languageNeedsItsTapAndInputMonitoring() {
         let isActive = { (tap: Bool?, inputMonitoring: Bool) in
-            ToolCondition.isActive(.layoutSwitcher, state: .running, handlesCmdTab: false, tapRunning: tap, inputMonitoring: { inputMonitoring })
+            ToolCondition.isActive(.layoutSwitcher, state: .running, handlesCmdTab: false, tapRunning: tap, snapAccessibility: nil, inputMonitoring: { inputMonitoring })
         }
         #expect(isActive(nil, true))
         #expect(isActive(true, true))
@@ -42,14 +42,24 @@ struct ToolConditionTests {
         #expect(!isActive(false, true))
     }
 
+    @Test func snapNeedsAccessibility() {
+        let isActive = { (access: Bool?) in
+            ToolCondition.isActive(.windowSnapper, state: .running, handlesCmdTab: nil, tapRunning: nil, snapAccessibility: access, inputMonitoring: { false })
+        }
+        #expect(isActive(nil))
+        #expect(isActive(true))
+        #expect(!isActive(false))
+        #expect(!ToolCondition.isActive(.windowSnapper, state: .starting, handlesCmdTab: nil, tapRunning: nil, snapAccessibility: true, inputMonitoring: { true }))
+    }
+
     @Test func theInputMonitoringCheckIsMadeOnlyWhenItDecides() {
         var checks = 0
         let check = { checks += 1; return true }
-        _ = ToolCondition.isActive(.layoutSwitcher, state: .starting, handlesCmdTab: nil, tapRunning: true, inputMonitoring: check)
-        _ = ToolCondition.isActive(.layoutSwitcher, state: .running, handlesCmdTab: nil, tapRunning: false, inputMonitoring: check)
-        _ = ToolCondition.isActive(.appSwitcher, state: .running, handlesCmdTab: nil, tapRunning: nil, inputMonitoring: check)
+        _ = ToolCondition.isActive(.layoutSwitcher, state: .starting, handlesCmdTab: nil, tapRunning: true, snapAccessibility: nil, inputMonitoring: check)
+        _ = ToolCondition.isActive(.layoutSwitcher, state: .running, handlesCmdTab: nil, tapRunning: false, snapAccessibility: nil, inputMonitoring: check)
+        _ = ToolCondition.isActive(.appSwitcher, state: .running, handlesCmdTab: nil, tapRunning: nil, snapAccessibility: nil, inputMonitoring: check)
         #expect(checks == 0)
-        _ = ToolCondition.isActive(.layoutSwitcher, state: .running, handlesCmdTab: nil, tapRunning: true, inputMonitoring: check)
+        _ = ToolCondition.isActive(.layoutSwitcher, state: .running, handlesCmdTab: nil, tapRunning: true, snapAccessibility: nil, inputMonitoring: check)
         #expect(checks == 1)
     }
 }
